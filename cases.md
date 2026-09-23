@@ -2,9 +2,7 @@
 
 ## The job
 
-> Given any filesystem path, rename its basename to kebab case — guaranteeing no file is
-> ever lost or overwritten, that renaming twice changes nothing, and that two distinct
-> files never collapse into one.
+> Given any filesystem path, rename its basename to kebab case — guaranteeing no file is ever lost or overwritten, that renaming twice changes nothing, and that two distinct files never collapse into one.
 
 Three invariants, in priority order:
 
@@ -12,9 +10,7 @@ Three invariants, in priority order:
 2. **Idempotent** — `keb(keb(x)) == keb(x)`, always.
 3. **Injective** — two distinct files never end up at the same path.
 
-Invariant 3 cannot be satisfied by the transform alone: `My File` and `my_file` both produce
-`my-file`. The pure transform is deliberately **not** injective; the filesystem layer restores
-injectivity by suffixing. This is the seam the whole design rests on.
+Invariant 3 cannot be satisfied by the transform alone: `My File` and `my_file` both produce `my-file`. The pure transform is deliberately **not** injective; the filesystem layer restores injectivity by suffixing. This is the seam the whole design rests on.
 
 ## Non-goals
 
@@ -34,8 +30,7 @@ The tool does **not**:
 | **Transform** — `String → String`, pure | Data transformer | Correctness, totality | Property tests + fuzz over arbitrary bytes |
 | **Filesystem** — plan, journal, rename | Stateful tool | Safety | Atomicity, reversibility, TOCTOU |
 
-Sections 1–5 and 9–11 specify the transform. Sections 6–7 and 12 specify the filesystem layer.
-Keep them separately testable.
+Sections 1–5 and 9–11 specify the transform. Sections 6–7 and 12 specify the filesystem layer. Keep them separately testable.
 
 ## Properties (the Z invariant, as tests)
 
@@ -147,12 +142,9 @@ Grouped so behavior can be agreed per group.
 
 ### The test a flag must pass
 
-> A flag earns its place if it expresses intent the tool cannot infer, **and** it does not
-> change what "correct" means.
+> A flag earns its place if it expresses intent the tool cannot infer, **and** it does not change what "correct" means.
 
-Flag *count* is a symptom, not the disease — `rg` has ~90 flags and is a deep tool because
-`rg pattern` needs none of them. The real cost driver is **where in the section 9 pipeline a
-flag sits**: flags at the edges are cheap, flags in the middle multiply the case matrix.
+Flag *count* is a symptom, not the disease — `rg` has ~90 flags and is a deep tool because `rg pattern` needs none of them. The real cost driver is **where in the section 9 pipeline a flag sits**: flags at the edges are cheap, flags in the middle multiply the case matrix.
 
 | Flag | Pipeline step | Cases it interacts with | Cost |
 |---|---|---|---|
@@ -164,10 +156,8 @@ flag sits**: flags at the edges are cheap, flags in the middle multiply the case
 
 ### Transform layer
 
-- `--separator=X` — emit `X` instead of `-`. Same algorithm, one character at step 10.
-  Not advertised in the first line of `--help`, since the tool is named `keb`.
-- `--ascii` — narrow the output alphabet to strict `[a-z0-9-]`, transliterating or dropping
-  everything else. The one genuine fork in the output contract (decision 2).
+- `--separator=X` — emit `X` instead of `-`. Same algorithm, one character at step 10. Not advertised in the first line of `--help`, since the tool is named `keb`.
+- `--ascii` — narrow the output alphabet to strict `[a-z0-9-]`, transliterating or dropping everything else. The one genuine fork in the output contract (decision 2).
 - `--max-length=N` — override the length inferred from the target filesystem.
 
 ### Filesystem layer
@@ -182,11 +172,9 @@ flag sits**: flags at the edges are cheap, flags in the middle multiply the case
 
 - Silent on success except the renames themselves: `old -> new` on **stdout**, one per line
 - Warnings and errors on **stderr**
-- Exit codes: `0` ok / `1` partial / `2` error. A failed rename does not abort the run;
-  the tool continues and exits non-zero at the end.
+- Exit codes: `0` ok / `1` partial / `2` error. A failed rename does not abort the run; the tool continues and exits non-zero at the end.
 
-This split *is* `--verbose`/`--quiet`, done by convention — `keb x >/dev/null` and
-`keb x 2>/dev/null` cover both, so neither flag ships.
+This split *is* `--verbose`/`--quiet`, done by convention — `keb x >/dev/null` and `keb x 2>/dev/null` cover both, so neither flag ships.
 
 ### Deliberately rejected
 
@@ -203,12 +191,7 @@ This split *is* `--verbose`/`--quiet`, done by convention — `keb x >/dev/null`
 
 ### Why no config file
 
-Prettier's config file works because the repo is the unit of convergence — everyone formatting
-that repo should agree. `keb` has no equivalent scope: it operates on arbitrary paths, often
-outside any project. A config file up the tree would mean **the same command does different
-things in different directories**, which breaks "no hidden state" — and matters far more here
-than for a formatter, because renames are destructive and one-shot. A dry-run in one directory
-would stop predicting behavior in another.
+Prettier's config file works because the repo is the unit of convergence — everyone formatting that repo should agree. `keb` has no equivalent scope: it operates on arbitrary paths, often outside any project. A config file up the tree would mean **the same command does different things in different directories**, which breaks "no hidden state" — and matters far more here than for a formatter, because renames are destructive and one-shot. A dry-run in one directory would stop predicting behavior in another.
 
 Environment variables have the same defect with worse discoverability.
 
@@ -222,9 +205,7 @@ Visible, versioned by the user, zero hidden state in the tool.
 
 ## 9. Pipeline order
 
-Order is load-bearing. The tool does **not** enumerate characters — it transforms
-aggressively, then whitelists `[a-z0-9-]`, so unknown codepoints fall into a defined
-fallback instead of needing a table entry.
+Order is load-bearing. The tool does **not** enumerate characters — it transforms aggressively, then whitelists `[a-z0-9-]`, so unknown codepoints fall into a defined fallback instead of needing a table entry.
 
 1. Split basename/extension **first** — dot rules are decided on the original string
 2. Strip bidi / format / control characters
@@ -242,20 +223,15 @@ fallback instead of needing a table entry.
 Two traps baked into this order:
 
 - **Lowercasing before step 7 destroys camelCase.** It must come after boundary detection.
-- **`ł ø đ þ ı ħ ŋ` have no NFD decomposition.** The standard "NFD + strip marks" deburring
-  trick passes them through untouched, and step 10 then deletes them: `Łódź.md` → `d.md`.
-  The explicit fold table at step 4 is what prevents this.
+- **`ł ø đ þ ı ħ ŋ` have no NFD decomposition.** The standard "NFD + strip marks" deburring trick passes them through untouched, and step 10 then deletes them: `Łódź.md` → `d.md`. The explicit fold table at step 4 is what prevents this.
 
 ## 10. Language-specific hazards
 
-- **Turkish `I` / `İ`** — `"TITLE".toLowerCase()` under a `tr` locale yields `tıtle`.
-  Always lowercase locale-invariant, never with the system locale.
+- **Turkish `I` / `İ`** — `"TITLE".toLowerCase()` under a `tr` locale yields `tıtle`. Always lowercase locale-invariant, never with the system locale.
 - **Greek final sigma** — `Σ` lowercases to `ς` or `σ` depending on word position.
 - **Ligatures** — `ﬁ ﬀ ﬃ` (U+FB0x) fold only under NFKC, not NFC.
-- **Cyrillic** has competing romanizations (ISO 9 / BGN+PCGN / GOST): `щ` = `shch` or `šč`;
-  Ukrainian `г`=`h` vs Russian `г`=`g`. Pick one standard and document it.
-- **CJK has no word boundaries**, and romanization needs a dictionary — 東京 → `tokyo` is not
-  derivable from codepoints. Kanji readings are ambiguous.
+- **Cyrillic** has competing romanizations (ISO 9 / BGN+PCGN / GOST): `щ` = `shch` or `šč`; Ukrainian `г`=`h` vs Russian `г`=`g`. Pick one standard and document it.
+- **CJK has no word boundaries**, and romanization needs a dictionary — 東京 → `tokyo` is not derivable from codepoints. Kanji readings are ambiguous.
 - **Hangul** — NFD explodes syllables into Jamo. Guard against decomposing it.
 - **Thai / Khmer / Lao** — no spaces between words at all.
 - **Indic** — ZWJ/ZWNJ are semantically meaningful (क्ष); stripping them changes the word.
@@ -271,60 +247,44 @@ Two traps baked into this order:
 - **Non-ASCII digits** — Arabic-Indic `٣`, Devanagari `३`, fullwidth `３`. Map to `3` or strip? **decision**
 - **Invisible characters** — soft hyphen U+00AD, ZWSP U+200B, ZWNJ, BOM U+FEFF at position 0, word joiner U+2060, non-breaking hyphen U+2011.
 - **Unicode spaces** beyond NBSP — U+2000–200A, U+202F narrow NBSP, U+3000 ideographic space.
-- **Emoji are not single characters** — ZWJ sequences (👨‍👩‍👧), skin-tone modifiers, flags (regional-indicator pairs), variation selector U+FE0F.
-  Edgiest: **keycap `1️⃣.png`** — stripping FE0F + U+20E3 leaves `1.png`, which may collide with an existing `1.png`.
+- **Emoji are not single characters** — ZWJ sequences (👨‍👩‍👧), skin-tone modifiers, flags (regional-indicator pairs), variation selector U+FE0F. Edgiest: **keycap `1️⃣.png`** — stripping FE0F + U+20E3 leaves `1.png`, which may collide with an existing `1.png`.
 - **Zalgo** — hundreds of combining marks on one base; also a length-blowup vector.
 - **Bidi override in filenames** — a name with U+202E renders as `photo.jpg` while being something else. Strip, and warn.
-- **Invalid UTF-8 filenames.** On Linux a filename is an arbitrary byte string, not text.
-  Latin-1 names from old archives are common and will crash a naive decoder — needs surrogateescape / lossy decoding.
+- **Invalid UTF-8 filenames.** On Linux a filename is an arbitrary byte string, not text. Latin-1 names from old archives are common and will crash a naive decoder — needs surrogateescape / lossy decoding.
 
 ## 12. Deeper filesystem reality
 
-- **`NAME_MAX` units differ** — 255 *bytes* on ext4, 255 *UTF-16 code units* on APFS/NTFS.
-  Truncation must not split a codepoint or a grapheme cluster, and must not eat the extension.
-- **Normalization behavior differs** — HFS+ stores NFD, APFS is normalization-*insensitive*,
-  ext4 stores raw bytes. So on Linux, `café` (NFC) and `café` (NFD) are **two different files in
-  one directory** that collapse to a single kebab name.
+- **`NAME_MAX` units differ** — 255 *bytes* on ext4, 255 *UTF-16 code units* on APFS/NTFS. Truncation must not split a codepoint or a grapheme cluster, and must not eat the extension.
+- **Normalization behavior differs** — HFS+ stores NFD, APFS is normalization-*insensitive*, ext4 stores raw bytes. So on Linux, `café` (NFC) and `café` (NFD) are **two different files in one directory** that collapse to a single kebab name.
 - **Windows / SMB silently strip trailing dots and spaces** — the rename becomes a no-op or targets a different file.
-- **Companion files** — `._file` (AppleDouble), `~$doc.docx` (Office lock), `.#file` (emacs), `file.icloud` stubs.
-  Renaming one of a pair breaks the pairing.
+- **Companion files** — `._file` (AppleDouble), `~$doc.docx` (Office lock), `.#file` (emacs), `file.icloud` stubs. Renaming one of a pair breaks the pairing.
 - **`Icon\r`** — a real macOS file whose name ends in a literal carriage return.
-- **Bundle directories** — `Foo.app`, `Bar.framework`, `.rtfd`. The directory name is part of a contract
-  with `Info.plist`; renaming breaks the bundle. Refuse or warn.
-- **Atomicity** — `rename()` is atomic, but the two-step case-only rename is not. A crash leaves the
-  temp name behind, so the undo journal must be write-**ahead**, not write-after.
+- **Bundle directories** — `Foo.app`, `Bar.framework`, `.rtfd`. The directory name is part of a contract with `Info.plist`; renaming breaks the bundle. Refuse or warn.
+- **Atomicity** — `rename()` is atomic, but the two-step case-only rename is not. A crash leaves the temp name behind, so the undo journal must be write-**ahead**, not write-after.
 - **TOCTOU** — a file can move or vanish between plan and execute; dry-run output can lie.
-- **Recursion hazards** — symlink loops, mount-point crossing, mutating a directory while iterating it
-  (collect the full list first, rename deepest-first).
+- **Recursion hazards** — symlink loops, mount-point crossing, mutating a directory while iterating it (collect the full list first, rename deepest-first).
 - **Immutable flags** (`chflags uchg`), SIP-protected paths, cloud placeholder/dataless files that download on access.
 - **FAT32 / exFAT** volumes — no `:`, case-insensitive, legacy 8.3 baggage.
 
 ## 13. Semantic landmines
 
-Correct kebab transforms that break builds. Highest-value category — most of the pain in this tool
-is not Unicode, it is confidently renaming something that was named that way on purpose.
+Correct kebab transforms that break builds. Highest-value category — most of the pain in this tool is not Unicode, it is confidently renaming something that was named that way on purpose.
 
-- **`Makefile` → `makefile`** breaks `make` on case-sensitive filesystems. Same class:
-  `Dockerfile`, `Gemfile`, `Rakefile`, `CMakeLists.txt`, `LICENSE`, `CODEOWNERS`, `Info.plist`, `AndroidManifest.xml`.
+- **`Makefile` → `makefile`** breaks `make` on case-sensitive filesystems. Same class: `Dockerfile`, `Gemfile`, `Rakefile`, `CMakeLists.txt`, `LICENSE`, `CODEOWNERS`, `Info.plist`, `AndroidManifest.xml`.
 - **`MyClass.java` → `my-class.java` does not compile.** Java requires filename == public class name.
-- **Framework-significant punctuation** — Next.js `[slug].tsx`, `[...slug].tsx`, `(group)/`;
-  SvelteKit `+page.svelte`, `+layout.server.ts`; Python `__init__.py`.
-  Stripping brackets / plus / underscores breaks routing or imports outright.
+- **Framework-significant punctuation** — Next.js `[slug].tsx`, `[...slug].tsx`, `(group)/`; SvelteKit `+page.svelte`, `+layout.server.ts`; Python `__init__.py`. Stripping brackets / plus / underscores breaks routing or imports outright.
 - **Hashes and UUIDs** — `A1B2C3D4-E5F6.bin`; digit-boundary splitting would shred these into `a1-b2-c3-d4`.
 - **Timestamps** — `2024-01-02T10:30:00Z.log` → `2024-01-02-t10-30-00-z.log`. Technically correct, practically vandalism.
 - **IPs / versions / dates** — `192.168.1.1`, `v1.2.3`, `2024.01.02` must survive the interior-dot rule.
 - **Date-prefixed content** — Hugo/Jekyll `2024-01-02-post-title.md`, `_index.md`.
-- **Inbound references** — renaming breaks every markdown link, import, and `<img src>` pointing at the old name.
-  At minimum warn; at most offer a `--check-references` mode.
+- **Inbound references** — renaming breaks every markdown link, import, and `<img src>` pointing at the old name. At minimum warn; at most offer a `--check-references` mode.
 
-**Mitigation:** a `--protect` list (`Makefile`, `Dockerfile`, `*.java`, `[*]`, `+page*`, `__*__`, `*.app`, `*.framework`)
-that refuses by default and requires `--force`.
+**Mitigation:** a `--protect` list (`Makefile`, `Dockerfile`, `*.java`, `[*]`, `+page*`, `__*__`, `*.app`, `*.framework`) that refuses by default and requires `--force`.
 
 ## 14. Weird-but-real
 
 - A file literally named `-rf`, `--force`, or `-`.
-- A filename containing `$(rm -rf ~)`, backticks, or `;` — harmless **if and only if the tool never shells out**.
-  Rule: use the `rename()` syscall; if `git mv` is used, exec an argv array with `--`, never a shell string.
+- A filename containing `$(rm -rf ~)`, backticks, or `;` — harmless **if and only if the tool never shells out**. Rule: use the `rename()` syscall; if `git mv` is used, exec an argv array with `--`, never a shell string.
 - A name that transforms to `.`, `..`, `-`, or empty.
 - `..config.md` — a legitimate hidden file beginning with two dots.
 - Rename target exists but is a *directory*.
@@ -354,10 +314,6 @@ All open decisions are settled. Each row is the shipped behavior plus the flag t
 
 ### Consequences worth restating
 
-- Decision 2 means the output alphabet is **not** `[a-z0-9-]` by default — it is
-  `[a-z0-9-]` plus any letters from scripts the tool does not transliterate.
-  `--ascii` is what narrows it to the strict whitelist.
-- Decision 1 is what protects `1080p`, `h264`, `utf8`, `sha256`, `base64`, `mp4`, `v1`
-  and every hash or UUID in section 13.
-- Decision 4 means the protect list from section 13 is a **warning** list for direct
-  arguments and a **skip** list for recursive sweeps.
+- Decision 2 means the output alphabet is **not** `[a-z0-9-]` by default — it is `[a-z0-9-]` plus any letters from scripts the tool does not transliterate. `--ascii` is what narrows it to the strict whitelist.
+- Decision 1 is what protects `1080p`, `h264`, `utf8`, `sha256`, `base64`, `mp4`, `v1` and every hash or UUID in section 13.
+- Decision 4 means the protect list from section 13 is a **warning** list for direct arguments and a **skip** list for recursive sweeps.
