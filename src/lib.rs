@@ -35,7 +35,12 @@
 ///
 /// From `cases.md`, decision 6.
 const COMPOUND_EXTS: &[&str] = &[
-    "tar.gz", "tar.bz2", "tar.xz", "d.ts", "min.js", "module.css",
+    "tar.gz",
+    "tar.bz2",
+    "tar.xz",
+    "d.ts",
+    "min.js",
+    "module.css",
 ];
 
 /// Convert a filename to kebab case, preserving its extension.
@@ -70,12 +75,7 @@ pub fn kebab(name: &str) -> String {
     // idempotent: junk kept verbatim inside an extension gets stripped on the second
     // pass, once it is no longer in extension position.
     let ext = ext
-        .map(|e| {
-            e.split('.')
-                .map(kebab_word)
-                .collect::<Vec<_>>()
-                .join(".")
-        })
+        .map(|e| e.split('.').map(kebab_word).collect::<Vec<_>>().join("."))
         .filter(|e| !e.is_empty() && !e.starts_with('.'));
 
     match ext {
@@ -154,8 +154,7 @@ fn is_boundary(chars: &[char], i: usize) -> bool {
     //
     // Except at position 1, where a single leading lowercase letter belongs to the
     // word that follows: `iPhone14Pro` -> `iphone14-pro`, `eBay` -> `ebay`
-    // (`cases.md` §2). Implied by the spec's expected output rather than stated as a
-    // decision — worth confirming.
+    // (`cases.md` decision 13).
     if prev.is_lowercase() {
         return i > 1;
     }

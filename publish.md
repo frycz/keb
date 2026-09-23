@@ -131,6 +131,12 @@ Only one long-lived secret is genuinely unavoidable:
 | `CARGO_REGISTRY_TOKEN` | crates.io Trusted Publishing, configured on the crate settings page |
 | `NPM_TOKEN` | npm Trusted Publishing — see below |
 
+**Both registries share a bootstrap wrinkle**: a trusted publisher is configured in
+*an existing package's settings*, so the very first publish of every package must be
+manual. That is `cargo publish` once from your machine (needs `cargo login`), and
+`npm publish --access public` once per npm package. Configure trusted publishing
+after, and CI is tokenless from the second release on.
+
 #### npm Trusted Publishing
 
 Requirements: **npm CLI ≥ 11.5.1**, **Node ≥ 22.14.0**, and `id-token: write` in the
