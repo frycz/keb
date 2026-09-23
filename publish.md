@@ -16,7 +16,7 @@ git tag v0.1.0 && git push --tags
               ├─ cross-compile: macos-arm64, macos-x64, linux-x64, linux-arm64, windows-x64
               ├─ GitHub Release + checksums          → curl installer, cargo binstall
               ├─ push Formula/keb.rb to homebrew-tap → brew install
-              ├─ npm publish × 5 (wrapper + platforms) → npm i -g keb, npx keb
+              ├─ npm publish × 5 (wrapper + platforms) → npm i -g @frycz/keb
               └─ cargo publish                        → cargo add keb, cargo install
 ```
 
@@ -31,7 +31,7 @@ around an approval that does not exist.
 | Channel | Account | Review | Notes |
 |---|---|---|---|
 | **crates.io** | GitHub OAuth + **verified email** | none | Names first-come, **permanent**. Versions immutable. |
-| **npm** | npm account + verified email | none | Names first-come. Scopes (`@user/keb`) always available as fallback. |
+| **npm** | npm account + verified email | none | Names first-come. `keb` is squatted, so we ship scoped — see Names. |
 | **Homebrew tap** | **none** — it is a git repo | none | No registry, no login. `brew` clones a GitHub repo. |
 | **homebrew-core** | — | **PR review** | Notability bar (~75 stars, or ~30 forks/watchers). Later-stage, optional. |
 | **GitHub Releases** | GitHub | none | |
@@ -67,20 +67,36 @@ history for anything you do not want public first — flipping exposes the whole
 
 ## One-time setup
 
-### 1. Claim the names
+### 1. Names — settled
 
-crates.io names are permanent and npm names effectively so. Do this **before** the
-implementation hardens around a name.
+Checked 2026-09-23:
 
-```sh
-cargo search keb          # or open crates.io/crates/keb
-npm view keb              # 404 means free
+| Registry | Name | Status |
+|---|---|---|
+| crates.io | `keb` | free ✅ |
+| npm | `keb` | **taken** — a squatter stub at `0.0.0`, bare `index.js`, published once |
+| npm | **`@frycz/keb`** | what we ship ✅ |
+
+The npm squat is dead but npm will not hand the name over casually; their name-dispute
+process exists for this and is slow with no guaranteed outcome. Not worth blocking on,
+because **the package name and the binary name are independent**:
+
+```jsonc
+{ "name": "@frycz/keb", "bin": { "keb": "bin/keb" } }
 ```
 
-If `keb` is taken on one registry but not the other, pick a name free on both rather
-than splitting identity across registries. Crate name and binary name are independent
-(`[[bin]] name = "keb"`), so a taken crate name is not fatal — but a consistent name
-is worth more than cleverness here.
+Users type `npm i -g @frycz/keb` once, then `keb` forever. Crate name, binary name,
+Homebrew formula and repo all stay `keb`; only the npm install string is longer. If
+the dispute is ever granted, republishing unscoped is additive.
+
+Every platform package is scoped too: `@frycz/keb-darwin-arm64`, etc.
+
+Re-verify before the first publish, since squatters occasionally lapse:
+
+```sh
+curl -s https://crates.io/api/v1/crates/keb -H "User-Agent: name-check (you@example.com)"
+npm view @frycz/keb       # E404 means free
+```
 
 ### 2. Accounts
 
@@ -97,17 +113,67 @@ gh repo create homebrew-tap --public --description "Homebrew formulas"
 
 Leave it empty. `cargo dist init` asks for its name and CI populates it.
 
-### 4. Tokens, as repo secrets on `keb`
+### 4. Credentials
 
-| Secret | What | Why |
+**Prefer Trusted Publishing everywhere.** Both crates.io and npm accept GitHub
+Actions OIDC: CI proves its identity to the registry per-run and receives a
+short-lived token, so no long-lived credential is stored in the repo at all. npm's
+token creation form now actively warns against tokens for CI and points here.
+
+Only one long-lived secret is genuinely unavoidable:
+
+| Secret | What | Why it must exist |
 |---|---|---|
-| `HOMEBREW_TAP_TOKEN` | GitHub PAT, write access to `homebrew-tap` | The default `GITHUB_TOKEN` cannot push to a *different* repo. **This is the most common first-release failure.** |
-| `NPM_TOKEN` | npm automation token | Automation tokens bypass 2FA prompts in CI. |
-| `CARGO_REGISTRY_TOKEN` | crates.io token | Or skip it — see Trusted Publishing below. |
+| `HOMEBREW_TAP_TOKEN` | fine-grained GitHub PAT — `homebrew-tap` only, Contents: read+write | The workflow's built-in `GITHUB_TOKEN` is scoped to the repo it runs in and cannot push to a *different* repo. **Most common first-release failure.** |
 
-**Trusted Publishing** — crates.io supports GitHub Actions OIDC, so CI can publish
-with no long-lived token stored anywhere. Configure it on the crate's settings page
-and drop `CARGO_REGISTRY_TOKEN` entirely. Strictly better; use it.
+| Not needed | Instead |
+|---|---|
+| `CARGO_REGISTRY_TOKEN` | crates.io Trusted Publishing, configured on the crate settings page |
+| `NPM_TOKEN` | npm Trusted Publishing — see below |
+
+#### npm Trusted Publishing
+
+Requirements: **npm CLI ≥ 11.5.1**, **Node ≥ 22.14.0**, and `id-token: write` in the
+workflow's `permissions`. `setup-node` does not guarantee a new enough npm on its own —
+upgrade it explicitly in the job:
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+steps:
+  - uses: actions/setup-node@v4
+    with: { node-version: "22" }
+  - run: npm install -g npm@latest
+```
+
+Provenance attestations are generated automatically — no `--provenance` flag.
+
+**Two wrinkles to plan around:**
+
+1. **Bootstrapping.** A trusted publisher is configured in *package settings on
+   npmjs.com*, so the package must already exist. The first publish of each package
+   is therefore manual, from your machine:
+
+   ```sh
+   npm publish --access public
+   ```
+
+   That is **6 packages** — the wrapper plus five platform packages — so six manual
+   first-publishes and six trusted-publisher configurations. One-time, but budget
+   for it rather than discovering it mid-release.
+
+2. **cargo-dist's npm job was built around `NPM_TOKEN`** and may not speak OIDC. Expect
+   to patch the generated workflow to add `id-token: write` and drop the token env.
+   **Verify this during the `v0.0.1` rehearsal** — that is what the rehearsal is for.
+
+   If it cannot be made to work, the fallback is *not* the classic token npm warns
+   about. Use a **granular access token restricted to the `@frycz` scope** with a short
+   expiry. The warning targets account-wide classic tokens; narrow and expiring is a
+   reasonable interim.
+
+Refs: [npm trusted publishers](https://docs.npmjs.com/trusted-publishers/) ·
+[GA changelog](https://github.blog/changelog/2025-07-31-npm-trusted-publishing-with-oidc-is-generally-available/)
 
 ## Cargo.toml
 
@@ -182,7 +248,7 @@ cargo-dist-version = "0.x.y"
 ci                 = ["github"]
 installers         = ["shell", "powershell", "homebrew", "npm"]
 tap                = "<user>/homebrew-tap"
-npm-package        = "keb"
+npm-scope          = "@frycz"
 targets = [
   "aarch64-apple-darwin",
   "x86_64-apple-darwin",
@@ -206,16 +272,17 @@ git add .github/workflows/release.yml
 `esbuild`, `swc`, `biome` and `turbo` use:
 
 ```jsonc
-// keb/package.json — the wrapper users actually install
+// the wrapper users actually install
 {
-  "name": "keb",
-  "bin": { "keb": "bin/keb" },
+  "name": "@frycz/keb",
+  "bin": { "keb": "bin/keb" },          // ← binary is `keb`, regardless of scope
+  "publishConfig": { "access": "public" },
   "optionalDependencies": {
-    "keb-darwin-arm64": "0.1.0",
-    "keb-darwin-x64":   "0.1.0",
-    "keb-linux-x64":    "0.1.0",
-    "keb-linux-arm64":  "0.1.0",
-    "keb-win32-x64":    "0.1.0"
+    "@frycz/keb-darwin-arm64": "0.1.0",
+    "@frycz/keb-darwin-x64":   "0.1.0",
+    "@frycz/keb-linux-x64":    "0.1.0",
+    "@frycz/keb-linux-arm64":  "0.1.0",
+    "@frycz/keb-win32-x64":    "0.1.0"
   }
 }
 ```
@@ -224,6 +291,11 @@ Each platform package declares `"os"` and `"cpu"`; npm installs only the matchin
 one, and `optionalDependencies` means the skips are not errors. No postinstall
 download, no compiler on the user's machine. This is why "written in Rust" and
 "published on npm" are not in tension.
+
+> **Scoped packages default to private.** Without `publishConfig.access: "public"`
+> (or `npm publish --access public`), the first publish fails with `402 Payment
+> Required` on a free account. It must be set on the wrapper **and every platform
+> package**. This is the #1 first-release failure for scoped binary packages.
 
 ## Rehearse on a stub — before writing the real thing
 
@@ -245,16 +317,27 @@ git commit -am "release plumbing" && git push
 git tag v0.0.1 && git push --tags
 ```
 
+The tag produces the six npm packages as build artifacts. **Publish them by hand
+this once**, then configure a trusted publisher on each at
+`npmjs.com/package/@frycz/<name>/access` — after which CI publishes them via OIDC and
+no `NPM_TOKEN` is ever needed:
+
+```sh
+npm publish --access public   # × 6: wrapper + 5 platform packages
+```
+
 Then verify every channel actually lit up:
 
 ```sh
 brew install <user>/tap/keb && keb --version
-npx keb@0.0.1 --version
+npx @frycz/keb@0.0.1 --version
 cargo install keb --version 0.0.1
 curl -sSf https://github.com/<user>/keb/releases/download/v0.0.1/keb-installer.sh | sh
 ```
 
-Start at `0.0.1` precisely so burning a version or two on plumbing costs nothing.
+Start at `0.0.1` precisely so burning a version or two on plumbing costs nothing —
+and re-tag `v0.0.2` to confirm the OIDC path works now that the packages exist. That
+second tag is the real test of the steady-state release, and it is cheap here.
 
 ## Release flow, thereafter
 
@@ -287,8 +370,8 @@ the tarball stays downloadable forever.
   emergencies (leaked secrets, legal).
 
 npm is slightly softer — `npm unpublish` works within 72 hours if nothing depends on
-the package — but do not plan around it. `npm deprecate keb@0.1.0 "message"` is the
-normal tool.
+the package — but do not plan around it. `npm deprecate @frycz/keb@0.1.0 "message"`
+is the normal tool.
 
 Homebrew is the forgiving one: the tap is a git repo, so a bad formula is fixed by
 pushing a correction.
@@ -310,6 +393,7 @@ cargo publish --dry-run
 | Bad crates.io publish | `cargo yank`, publish a patch. |
 | Tap push rejected (403) | `HOMEBREW_TAP_TOKEN` missing, expired, or lacking write scope on the tap repo. |
 | npm 403 in CI | Token is not an *automation* token; classic tokens hit the 2FA prompt. |
+| npm 402 Payment Required | Scoped package published without `access: public`. |
 
 ## Later, optional
 
@@ -326,16 +410,24 @@ cargo publish --dry-run
 
 **Once:**
 
-- [ ] `keb` free on crates.io and npm
-- [ ] crates.io email verified
-- [ ] npm account + 2FA
-- [ ] `homebrew-tap` repo created, public, empty
-- [ ] `HOMEBREW_TAP_TOKEN`, `NPM_TOKEN` as secrets on `keb`
-- [ ] Trusted Publishing configured on crates.io (or `CARGO_REGISTRY_TOKEN`)
+- [x] names settled — `keb` on crates.io, `@frycz/keb` on npm
+- [x] `homebrew-tap` repo created, public, empty
+- [x] `HOMEBREW_TAP_TOKEN` secret on `keb`
+- [ ] crates.io account + **email verified**
+- [ ] npm account + 2FA, `@frycz` scope exists
+- [ ] `LICENSE-MIT` + `LICENSE-APACHE` committed
+- [ ] `README.md` written — it is the crates.io and npm package page
 - [ ] `Cargo.toml` metadata complete, `lib`/`bin` split, `cli` feature
 - [ ] `cargo dist init` + generated workflow committed
-- [ ] `v0.0.1` stub released and all four install paths verified
+- [ ] `access: public` on the wrapper and all 5 platform packages
+- [ ] `v0.0.1` stub released; 6 npm packages hand-published
+- [ ] trusted publishers configured — crates.io + all 6 npm packages
+- [ ] `v0.0.2` tagged to prove the tokenless OIDC path
+- [ ] all four install paths verified
 - [ ] source repo flipped public, history reviewed
+
+**Explicitly not needed:** `NPM_TOKEN`, `CARGO_REGISTRY_TOKEN` — Trusted Publishing
+replaces both.
 
 **Every release:**
 

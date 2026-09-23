@@ -1,0 +1,48 @@
+[package]
+name        = "keb"
+version     = "0.0.1"
+edition     = "2024"
+rust-version = "1.85"
+description = "Rename files to kebab case, safely and idempotently"
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/frycz/keb"
+homepage    = "https://github.com/frycz/keb"
+readme      = "README.md"
+keywords    = ["kebab-case", "rename", "filename", "slug", "cli"]
+categories  = ["command-line-utilities", "filesystem", "text-processing"]
+exclude     = ["cases.md", "publish.md", "atm.json", ".github/"]
+
+[lib]
+name = "keb"
+path = "src/lib.rs"
+
+[[bin]]
+name              = "keb"
+path              = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli     = ["dep:clap"]
+
+[dependencies]
+# CLI layer only — gated so library consumers get the transform alone:
+#   cargo add keb --no-default-features
+clap = { version = "4", features = ["derive"], optional = true }
+
+# Transform layer — added as the pipeline in cases.md §9 is implemented:
+#   unicode-normalization   steps 3, 5
+#   unicode-properties      steps 2, 12
+#   unicode-segmentation    step 11
+#   deunicode / any_ascii   step 6
+#
+# Filesystem layer — cases.md §6-7, §12:
+#   rustix, walkdir, tempfile, serde_json
+
+[dev-dependencies]
+proptest = "1"
+
+[profile.release]
+opt-level = 3
+lto       = true
+strip     = true
