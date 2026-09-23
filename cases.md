@@ -68,7 +68,7 @@ Grouped so behavior can be agreed per group.
 | `XMLHttpRequest` | `xml-http-request` | |
 | `IPv6Address` | `ipv6-address` *or* `ip-v6-address` | **decision** |
 | `Chapter10Part2` | `chapter-10-part-2` | letter↔digit boundary |
-| `iPhone14Pro` | `iphone-14-pro` | |
+| `iPhone14Pro` | `iphone14-pro` | decisions 1 + 13 |
 | `1080p`, `4K`, `H264` | keep as-is? | **decision** — splitting gives `1080-p` |
 | `file2go` | `file2go` or `file-2-go` | **decision** — lowercase→digit usually *not* a boundary |
 
@@ -303,7 +303,7 @@ All open decisions are settled. Each row is the shipped behavior plus the flag t
 | 2 | Non-Latin scripts | **Transliterate what is deterministic** (Latin-ext, Cyrillic, Greek); **keep** what is not (CJK, Thai, Arabic, Hebrew, Indic). `日本語 Report.md` → `日本語-report.md` | `--ascii` forces strict ASCII output |
 | 3 | Invalid-UTF-8 filenames | **Lossy-decode and rename**, logging every dropped byte | — |
 | 4 | Protected names | **Never blocks an explicitly named file** — warn on stderr, then rename. Under `-r` the user did not pick each file, so protected names are **skipped and reported** | `-f` renames protected names under `-r` too (warnings are stderr — `2>/dev/null`) |
-| 5 | `IPv6Address` | `ipv6-address` — an uppercase run plus following lowercase plus trailing digits is one token | — |
+| 5 | `IPv6Address` | `ipv6-address` — an uppercase run plus following lowercase plus trailing digits is one token. **Mid-uppercase-run only**: after a *digit* the boundary always stands, or decision 1's `Chapter10Part2` → `chapter10-part2` would regress to `chapter10part2` | — |
 | 6 | Compound extensions | **Whitelist**: `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.d.ts`, `.min.js`, `.test.*`, `.spec.*`, `.stories.*`, `.module.css`. Everything else: last dot only | — |
 | 7 | `&` and `%` | `&` → `and`; `%` `$` `#` `@` are dropped | — |
 | 8 | `C++` / `C#` | Token map: `c++`→`cpp`, `c#`→`csharp`, `f#`→`fsharp`, `.net`→`dotnet` | — |
@@ -311,6 +311,8 @@ All open decisions are settled. Each row is the shipped behavior plus the flag t
 | 10 | `git mv` in repos | **Auto-detect**, tracked files only — preserves staged state and rename detection | — (inference is never wrong) |
 | 11 | Cyrillic romanization | **BGN/PCGN** — emits ASCII directly, unlike ISO 9's `šč` | — |
 | 12 | Non-ASCII digits | **Mapped to ASCII.** `٣`→`3`, `३`→`3` via an explicit `Nd`→numeric-value table (NFKC covers fullwidth but not Arabic-Indic or Devanagari) | — |
+| 13 | Stem-initial lowercase letter | **Glued to the word that follows.** `iPhone14Pro` → `iphone14-pro`, `eBay` → `ebay`. A single leading lowercase letter is a prefix, not a word | — |
+| 14 | Uppercase with no lowercase mapping | **Never a case boundary.** `𝔍` and other math alphanumerics are `Uppercase` but fold to themselves, so treating them as a transition splits again on every pass and breaks idempotency. Moot once NFKC (step 3) folds them to ASCII — the guard is defence in depth | — |
 
 ### Consequences worth restating
 
