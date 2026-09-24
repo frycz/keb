@@ -28,7 +28,8 @@ fn main() -> std::process::ExitCode {
 
     for path in &cli.paths {
         match plan(path) {
-            Some((from, to)) if from == to => {} // already kebab — silent no-op
+            // already kebab — silent no-op
+            Some((from, to)) if from == to => {}
             Some((from, to)) => {
                 // Stream contract (cases.md §8): renames on stdout, one per line.
                 println!("{} -> {}", from.display(), to.display());

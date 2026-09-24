@@ -250,7 +250,8 @@ mod tests {
         assert_eq!(kebab_word("sha256"), "sha256");
         assert_eq!(kebab_word("file2go"), "file2go");
         assert_eq!(kebab_word("iPhone14Pro"), "iphone14-pro");
-        assert_eq!(kebab_word("IPv6Address"), "ipv6-address"); // decision 5
+        // decision 5
+        assert_eq!(kebab_word("IPv6Address"), "ipv6-address");
     }
 
     #[test]
