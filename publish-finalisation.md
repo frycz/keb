@@ -18,6 +18,31 @@ your decision, which is why it is not automated.
 
 ---
 
+## Order is forced — npm cannot be first
+
+Verified against `dist` 0.32.0's actual output. The npm package is **one** package
+whose `postinstall` downloads the binary from the GitHub Release:
+
+```jsonc
+"artifactDownloadUrls": ["https://github.com/frycz/keb/releases/download/v0.0.1"],
+"scripts": { "postinstall": "node ./install.js" }
+```
+
+Publishing it before the tag exists gives every user a failed `postinstall`. So:
+
+```
+   tag v0.0.1  →  CI builds binaries  →  GitHub Release exists
+                                              ↓
+                          Homebrew formula ───┤  (both fetch Release assets)
+                          npm package ────────┘
+   cargo publish — independent, ships source not binaries, can go any time
+```
+
+Homebrew and npm are both downstream of the Release. `cargo publish` is the only one
+that can happen whenever.
+
+---
+
 ## 1. npm credentials
 
 `dist` 0.32.0 cannot use npm Trusted Publishing — its `publish-npm` job authenticates
@@ -53,17 +78,9 @@ gh secret list --repo frycz/keb    # expect HOMEBREW_TAP_TOKEN and NPM_TOKEN
 
 ## 2. Make the repo public
 
-Homebrew formulas, the shell installer and `cargo binstall` all fetch GitHub Release
-assets by URL, and cannot authenticate to a private repo. Nothing downstream works
-until this is done.
-
-Already verified safe: `.env` is gitignored and was **never committed**; tracked files
-are only source, docs, licenses and workflows.
-
-```sh
-gh repo edit frycz/keb --visibility public --accept-visibility-change-consequences
-gh repo view frycz/keb --json visibility
-```
+- [x] **Done.** Homebrew formulas, the shell installer, `cargo binstall` and the npm
+  `postinstall` all fetch Release assets by URL and cannot authenticate to a private
+  repo.
 
 ## 3. Push
 

@@ -139,10 +139,11 @@ Only one long-lived secret is genuinely unavoidable:
 | `NPM_TOKEN` | npm Trusted Publishing — see below |
 
 **Both registries share a bootstrap wrinkle**: a trusted publisher is configured in
-*an existing package's settings*, so the very first publish of every package must be
-manual. That is `cargo publish` once from your machine (needs `cargo login`), and
-`npm publish --access public` once per npm package. Configure trusted publishing
-after, and CI is tokenless from the second release on.
+*an existing package's settings*, so the very first publish must be manual. That is
+`cargo publish` once from your machine (needs `cargo login`), and one
+`npm publish --access public`. Configure trusted publishing after, and CI is
+tokenless from the second release on — for crates.io at least; see the `dist` OIDC
+gap below for npm.
 
 #### npm Trusted Publishing
 
@@ -165,16 +166,13 @@ Provenance attestations are generated automatically — no `--provenance` flag.
 **Two wrinkles to plan around:**
 
 1. **Bootstrapping.** A trusted publisher is configured in *package settings on
-   npmjs.com*, so the package must already exist. The first publish of each package
-   is therefore manual, from your machine:
+   npmjs.com*, so the package must already exist. The first publish is therefore
+   manual, from your machine — and, per the section above, only *after* the GitHub
+   Release the package downloads from exists:
 
    ```sh
-   npm publish --access public
+   npm publish --access public ./target/distrib/keb-npm-package
    ```
-
-   That is **6 packages** — the wrapper plus five platform packages — so six manual
-   first-publishes and six trusted-publisher configurations. One-time, but budget
-   for it rather than discovering it mid-release.
 
 2. **`dist` 0.32.0 does not speak OIDC — confirmed, not speculation.** The generated
    `publish-npm` job authenticates with `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`,
@@ -289,34 +287,41 @@ verifies it is in sync — after any config change, re-run `dist generate` and c
 
 ### How the npm side works
 
-`cargo-dist` emits the standard per-platform binary package layout — the same one
-`esbuild`, `swc`, `biome` and `turbo` use:
+**Verified against `dist` 0.32.0 output, not assumed.** `dist` does *not* use the
+esbuild-style layout of one wrapper plus N per-platform packages joined by
+`optionalDependencies`. It emits **a single package** with a `postinstall` script that
+downloads the right binary from the GitHub Release at install time:
 
 ```jsonc
-// the wrapper users actually install
+// @frycz/keb — the whole thing, one package
 {
   "name": "@frycz/keb",
-  "bin": { "keb": "bin/keb" },          // ← binary is `keb`, regardless of scope
-  "publishConfig": { "access": "public" },
-  "optionalDependencies": {
-    "@frycz/keb-darwin-arm64": "0.1.0",
-    "@frycz/keb-darwin-x64":   "0.1.0",
-    "@frycz/keb-linux-x64":    "0.1.0",
-    "@frycz/keb-linux-arm64":  "0.1.0",
-    "@frycz/keb-win32-x64":    "0.1.0"
-  }
+  "version": "0.0.1",
+  "bin": { "keb": "run-keb.js" },        // ← binary is `keb`, regardless of scope
+  "scripts": { "postinstall": "node ./install.js" },
+  "artifactDownloadUrls": [
+    "https://github.com/frycz/keb/releases/download/v0.0.1"
+  ],
+  "supportedPlatforms": { /* target triple -> artifact name */ }
 }
 ```
 
-Each platform package declares `"os"` and `"cpu"`; npm installs only the matching
-one, and `optionalDependencies` means the skips are not errors. No postinstall
-download, no compiler on the user's machine. This is why "written in Rust" and
-"published on npm" are not in tension.
+Two consequences that drive the release order:
 
-> **Scoped packages default to private.** Without `publishConfig.access: "public"`
-> (or `npm publish --access public`), the first publish fails with `402 Payment
-> Required` on a free account. It must be set on the wrapper **and every platform
-> package**. This is the #1 first-release failure for scoped binary packages.
+1. **Only one npm package exists.** Not six. The "six manual first-publishes" figure
+   in an earlier draft of this document was wrong.
+2. **The GitHub Release must exist before the npm package is usable.** `install.js`
+   fetches `…/releases/download/v<version>/keb-<target>.tar.xz` on every install, so
+   publishing to npm before tagging produces a package that fails `postinstall` for
+   every user. **npm is last, never first.**
+
+The version in `artifactDownloadUrls` is baked in at build time, which is why the npm
+package must be rebuilt per release and cannot be published ahead of the tag.
+
+> **Scoped packages default to private** — a first publish without
+> `--access public` fails with `402 Payment Required` on a free account. The
+> generated `publish-npm` job already passes the flag; only a by-hand
+> `npm publish` needs it added.
 
 ## Rehearse on a stub — before writing the real thing
 
