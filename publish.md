@@ -9,7 +9,14 @@ cargo package --list
 cargo publish --dry-run
 ```
 
-Bump `version` in `Cargo.toml`, update `CHANGELOG.md`, commit.
+Bump the version in **both** places — `Cargo.toml` and the installer URL in
+`README.md`, which is pinned to a release tag and is the one reference that does
+not derive from `Cargo.toml`. Then update `CHANGELOG.md` and commit.
+
+```sh
+# should print exactly two lines: Cargo.toml and README.md
+grep -rn "$OLD_VERSION" --include='*.md' --include='*.toml' . | grep -v Cargo.lock
+```
 
 ## 2. crates.io — by hand
 

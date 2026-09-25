@@ -22,7 +22,7 @@ cargo install keb
 ```
 
 ```sh
-curl -sSf https://github.com/frycz/keb/releases/download/v0.0.1/keb-installer.sh | sh
+curl -sSf https://github.com/frycz/keb/releases/download/v0.1.0/keb-installer.sh | sh
 ```
 
 Prebuilt binaries for macOS (Apple Silicon and Intel), Linux (x64 and ARM64) and Windows x64 are on the [releases page](https://github.com/frycz/keb/releases).
