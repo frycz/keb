@@ -3,10 +3,8 @@
 Rename files to kebab case.
 
 ```console
-$ keb *.md
+$ keb "My File.md"
 My File.md -> my-file.md
-XMLHttpRequest.MD -> xml-http-request.md
-Report (Final) [v2].md -> report-final-v2.md
 ```
 
 ## Install
@@ -44,6 +42,15 @@ keb [OPTIONS] <PATHS>...
       --separator     Emit this character between words instead of `-`
       --ascii         Narrow the output to ASCII
       --max-length    Override the 255 byte / UTF-16 unit name limit
+```
+
+Give it as many names as you like:
+
+```console
+$ keb *
+My File.md -> my-file.md
+Report (Final) [v2].md -> report-final-v2.md
+XMLHttpRequest.MD -> xml-http-request.md
 ```
 
 Only the basename changes — parent directories are never touched.
@@ -105,7 +112,15 @@ Three rules do most of the work:
 
 ## What it refuses to do
 
-A name whose *correct* kebab form breaks something is protected: `Makefile`, `Dockerfile`, `CMakeLists.txt`, `LICENSE`, `*.java`, `[slug].tsx`, `+page.svelte`, `__init__.py`, `Foo.app`, `CON`, and the rest of the list in [`design/cases.md`](https://github.com/frycz/keb/blob/main/design/cases.md#13-semantic-landmines).
+A name whose *correct* kebab form breaks something is protected. That is the whole list, in four groups:
+
+**Names a build tool looks up literally.** `Makefile`, `GNUmakefile`, `CMakeLists.txt`, `Dockerfile`, `Containerfile`, `Gemfile`, `Rakefile`, `Brewfile`, `Procfile`, `Vagrantfile`, `Jenkinsfile`, `Justfile`, `Caddyfile`, `LICENSE`, `LICENCE`, `COPYING`, `NOTICE`, `CODEOWNERS`, `Info.plist`, `AndroidManifest.xml`.
+
+**Syntax rather than a name**, matched by prefix. `[slug].tsx` a dynamic route segment, `(marketing)` a route group, `+page.svelte` a framework route file, `__init__.py` a dunder name, `_index.md` a section index, `._Report.md` an AppleDouble companion, `~$doc.docx` an Office lock file, `.#main.c` an Emacs lock file.
+
+**Bundle directories**, matched by extension, in any case. `.app`, `.framework`, `.bundle`, `.rtfd`, `.xcodeproj`, `.xcworkspace`, `.playground`, `.kext`, `.plugin`, `.lproj`, `.docset` — the wrapper name is part of a contract with the metadata inside it.
+
+**Four one-offs.** `*.java`, whose name must match its public class; `*.icloud`, a placeholder for a file not downloaded yet; `Icon\r`, the macOS custom-icon file; and the Windows reserved device names `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9` and `LPT1`–`LPT9`, with or without an extension, in any case. `COM0`, `COM10` and `CONFIG` are not reserved, and are renamed like anything else.
 
 Naming one on the command line renames it anyway, with a warning — you picked it. Finding one under `-r` skips it, because you did not:
 
@@ -142,8 +157,6 @@ The rest is the long tail a regex gets wrong:
 - `Makefile` → `makefile` breaks the build; so does renaming `MyClass.java`
 - Inside a git repository a tracked file moves with `git mv`, so staged state and rename detection survive
 - A filename on Linux is a byte string, not text; an invalid-UTF-8 name is renamed anyway, and every dropped byte is reported
-
-[`design/cases.md`](https://github.com/frycz/keb/blob/main/design/cases.md) is the full specification — every case, every decision, and the reasoning.
 
 ## Undo
 
@@ -193,4 +206,4 @@ alias sn='keb --separator=_'
 
 ## License
 
-MIT or Apache-2.0, at your option.
+MIT
