@@ -6,3 +6,12 @@
 # everyone who runs the test benefits from these saved cases.
 cc 5e3162a4a0dd5cfae8119136e6f395c3f4119bd0a2f456a623ec2b0bc1dab672 # shrinks to s = "¡."
 cc 785d09c6cf4229b748dcfa18ed41639ec4988e05e19a0dfa2cef967a1b12dad2 # shrinks to s = "AA𝔍0"
+cc ad169eaf0e41225881b952832b967cae82d76ff20e38b5082cc894bcd774c3ab # shrinks to s = "Ⱥ ", ascii = false, sep = '-', max = 3
+cc 30354ffc10f83f6440f372e66f709a619da24b5e2d796580bebd3a5ed98bd584 # shrinks to s = "ȺA", max = 3
+cc 95a1208b0568c6aea42ed43f254470822d51d3f2b989efaf13fb540975dad9e4 # shrinks to s = "Ⱥ🌀"
+cc 09c72e3684e7e8a082dcb28aeb8e1b66f6509cf9fd8a747fc0a13bbb61635b85 # shrinks to s = "Ⱥ0"
+cc 568d24ce2d11152243f0926b98510554cbf41aa5dc67fb1d92cce1d606207753 # shrinks to s = "a.Ⱥ.\u{a8e0}"
+cc 214c9d1e2a72271e89b77d1cc4b235e04ea25d7f06718602a5ff687ba22de0d6 # shrinks to s = "a🌀\u{10a05}"
+cc 3ad21162678b02594e7887c0f595e96342009560d469908d921256c7671db6ec # shrinks to s = "¹￼\u{1e08f}Aa", ascii = false, sep = '-', max = 6
+cc eb43ff0e862122b2af298e1ba976feda7ccf6f9b6995f7b8e1bcd6444c0464d2 # shrinks to s = "ꨀ.0 ", ascii = false, sep = '-', max = 5
+cc bbceda6fd6d8c5bf7c5307ee6a244c8e7721c8a282fa2b441169914b3a344630 # shrinks to s = "𐫫.᭐"

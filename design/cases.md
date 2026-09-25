@@ -314,6 +314,20 @@ All open decisions are settled. Each row is the shipped behavior plus the flag t
 | 13 | Stem-initial lowercase letter | **Glued to the word that follows.** `iPhone14Pro` → `iphone14-pro`, `eBay` → `ebay`. A single leading lowercase letter is a prefix, not a word | — |
 | 14 | Uppercase with no lowercase mapping | **Never a case boundary.** `𝔍` and other math alphanumerics are `Uppercase` but fold to themselves, so treating them as a transition splits again on every pass and breaks idempotency. Moot once NFKC (step 3) folds them to ASCII — the guard is defence in depth | — |
 
+### Settled during implementation
+
+The rows above were decided before the code existed. These came up while writing it — each one was an open choice in the sections above, or a contradiction between two of them.
+
+| # | Decision | Default | Override |
+|---|---|---|---|
+| 15 | Name transforms to nothing (§7) | **Refuse**, warn, exit 1. `untitled.md` would discard the only thing that distinguished `🚀.md`, and two such files in a directory would then need suffixing to tell apart the names the tool itself invented. The transform returns `""` and the filesystem layer leaves the file alone | — |
+| 16 | Interior dots (§3 vs §13) | **A dot between two ASCII digits survives; every other interior dot becomes a separator.** §3's table says interior dots split and also that `v1.2.3-Release.zip` keeps its dots; §13 requires `192.168.1.1` and `2024.01.02` to survive. The digit test is what separates `My.File.Name` from a version. It also means an extension that is all digits is not an extension | — |
+| 17 | Target exists, different file (§7) | **Auto-suffix** `-2`, `-3`… Skipping would leave the job undone with no way to finish it; suffixing is what restores invariant 3, and the suffixed name is a fixed point of the transform | `-f` overwrites |
+| 18 | Target is a *directory* | **Never overwritten, at any force level** — replacing it means deleting its contents, which invariant 1 outranks. `-f` falls back to suffixing and says so | — |
+| 19 | Combining marks on a kept script (§10, Indic) | **A mark is stripped only when its base is ASCII.** After steps 4 and 6 every romanized script *is* ASCII, so an ASCII base means "Latin letter wearing an accent" and stripping is the point. Devanagari keeps its virama and vowel signs. A mark orphaned by a stripped base (an emoji, say) is dropped, not re-attached — keeping it breaks idempotency | `--ascii` drops them all |
+| 20 | Zero-width space (§1 vs §11) | **A separator, not a deletion.** §1 groups U+200B with NBSP, §11 lists it among the invisibles to strip. It is a *space*; the joiners and marks around it are not, and those are still deleted | — |
+| 21 | Journal location | `$XDG_STATE_HOME/keb/journal.tsv`, or `%LOCALAPPDATA%\keb\journal.tsv`; last 20 runs. Reading a state-directory variable is not the configuration §8 rules out — it says where to put a file, never what the tool does to a name | — |
+
 ### Consequences worth restating
 
 - Decision 2 means the output alphabet is **not** `[a-z0-9-]` by default — it is `[a-z0-9-]` plus any letters from scripts the tool does not transliterate. `--ascii` is what narrows it to the strict whitelist.
