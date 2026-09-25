@@ -1,6 +1,31 @@
 # Publishing a new version
 
-## 1. Prepare
+## 1. Bump, then commit
+
+Bump first and preflight second, not the other way round. The checks below
+package whatever is committed, so bumping afterwards means verifying the *old*
+version and shipping one nobody tested.
+
+Bump the version in **both** places — `Cargo.toml` and the installer URL in
+`README.md`, which is pinned to a release tag and is the one reference that does
+not derive from `Cargo.toml`.
+
+```sh
+# should print exactly two lines: Cargo.toml and README.md
+grep -rn "$OLD_VERSION" --include='*.md' --include='*.toml' . | grep -v Cargo.lock
+```
+
+Update `CHANGELOG.md`, then commit — `cargo package` reads the git tree, not the
+working directory, and refuses outright while it is dirty:
+
+```
+error: N files in the working directory contain changes that were not yet committed into git
+```
+
+`--allow-dirty` silences that, but it packages uncommitted work and is not a fix.
+Commit instead.
+
+## 2. Preflight
 
 ```sh
 cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check
@@ -9,23 +34,14 @@ cargo package --list
 cargo publish --dry-run
 ```
 
-Bump the version in **both** places — `Cargo.toml` and the installer URL in
-`README.md`, which is pinned to a release tag and is the one reference that does
-not derive from `Cargo.toml`. Then update `CHANGELOG.md` and commit.
-
-```sh
-# should print exactly two lines: Cargo.toml and README.md
-grep -rn "$OLD_VERSION" --include='*.md' --include='*.toml' . | grep -v Cargo.lock
-```
-
-## 2. crates.io — by hand
+## 3. crates.io — by hand
 
 ```sh
 # irreversible: the version can never be reused
 cargo publish
 ```
 
-## 3. Tag
+## 4. Tag
 
 ```sh
 git push
@@ -37,7 +53,7 @@ CI then runs: `plan` → `build-local-artifacts` (5 targets) → `build-global-a
 
 `publish-npm` **will fail** until the npm gap below is closed. Everything else succeeds independently; only `announce` is skipped.
 
-## 4. npm — by hand, after the tag
+## 5. npm — by hand, after the tag
 
 Trusted Publishing *is* configured, but it is only npm's half of the handshake: the workflow still has to present an OIDC token, and `dist`'s job sends `NODE_AUTH_TOKEN` instead. See [the npm gap](#the-npm-gap).
 
@@ -49,7 +65,7 @@ dist build --artifacts=global
 npm publish --access public ./target/distrib/keb-npm-package
 ```
 
-## 5. Verify
+## 6. Verify
 
 ```sh
 brew update && brew upgrade keb && keb --version
@@ -119,9 +135,9 @@ Config lives in `Cargo.toml`. `dist` rewrites the block with its own formatting,
 1. **`dist` has no OIDC support.** Its `publish-npm` job sends `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` and the workflow requests no `id-token: write` permission, so npm Trusted Publishing cannot be reached.
 2. **Tokens now need an explicit 2FA bypass.** npm removed classic Automation tokens in November 2025. A granular token publishes from CI only with the **"Bypass two-factor authentication"** flag — and npm is removing direct publish via granular token entirely in **January 2027**.
 
-So the token route is a dead end worth no investment, and step 4 stays manual until `dist` ships OIDC.
+So the token route is a dead end worth no investment, and step 5 stays manual until `dist` ships OIDC.
 
-**Trusted Publishing is already configured** on `@frycz/keb` (repo `frycz/keb`, workflow `release.yml`, no environment name, "Allow npm publish" enabled). It is inert until the workflow can present an OIDC token. When `dist` adds support — or if you patch the generated workflow to add `id-token: write`, upgrade npm to ≥ 11.5.1 and drop `NODE_AUTH_TOKEN` — step 4 disappears and `NPM_TOKEN` can be deleted.
+**Trusted Publishing is already configured** on `@frycz/keb` (repo `frycz/keb`, workflow `release.yml`, no environment name, "Allow npm publish" enabled). It is inert until the workflow can present an OIDC token. When `dist` adds support — or if you patch the generated workflow to add `id-token: write`, upgrade npm to ≥ 11.5.1 and drop `NODE_AUTH_TOKEN` — step 5 disappears and `NPM_TOKEN` can be deleted.
 
 Both registries share a bootstrap rule: a trusted publisher is configured in an *existing* package's settings, so the first publish of anything is always manual.
 
@@ -135,7 +151,7 @@ Publishes are effectively permanent. crates.io versions can never be reused or d
 |---|---|
 | CI failed *after* `cargo publish` | Do not re-tag. That version is spent; bump to the next patch. |
 | `publish-homebrew-formula` 403 | `HOMEBREW_TAP_TOKEN` expired or lacks Contents: write |
-| `npm error code EOTP` | Expected — token has no 2FA bypass. Publish by hand (step 4). |
+| `npm error code EOTP` | Expected — token has no 2FA bypass. Publish by hand (step 5). |
 | `npm 402 Payment Required` | Scoped package published without `--access public` |
 | `npm view` 404 right after publishing | CDN lag. Wait a minute. |
 | One target fails to build | Drop it from `targets`, `dist init --yes`, re-tag |
