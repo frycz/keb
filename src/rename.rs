@@ -25,12 +25,16 @@ pub struct Mover {
     /// Overwrite an existing target, and rename protected names under `-r`.
     pub force: bool,
     dry_run: bool,
+    /// Permit renaming a directory at all. Off by default: a directory rename breaks
+    /// every path that points *into* it, and the name is often reached by completion
+    /// rather than chosen.
+    pub allow_dirs: bool,
     counter: u32,
 }
 
 impl Mover {
-    pub fn new(force: bool, dry_run: bool) -> Mover {
-        Mover { git: Git::default(), force, dry_run, counter: 0 }
+    pub fn new(force: bool, dry_run: bool, allow_dirs: bool) -> Mover {
+        Mover { git: Git::default(), force, dry_run, allow_dirs, counter: 0 }
     }
 
     /// Rename `from` to `to`, journalling first.
@@ -151,6 +155,14 @@ pub struct Claims {
 /// let the tool rename straight over it (§14, "dangling symlink").
 pub fn exists(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok()
+}
+
+/// Is this a directory in its own right? Deliberately not `Path::is_dir`, which follows
+/// symlinks: renaming a symlink that points at a directory only changes a name and cannot
+/// restructure anything, so it is not what `-d` guards. Matches the walk, which does not
+/// follow symlinks either.
+pub fn is_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
 }
 
 /// Are these two paths the same file?

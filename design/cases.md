@@ -163,7 +163,8 @@ Flag *count* is a symptom, not the disease — `rg` has ~90 flags and is a deep 
 ### Filesystem layer
 
 - `-n` / `--dry-run` — print the plan, change nothing
-- `-r` — recurse; `--dirs-only` / `--files-only` filter that traversal
+- `-r` — recurse
+- `-d` / `--allow-dirs` — permit renaming directories at all; without it `-r` is a files-only sweep
 - `-f` — force: overwrite on collision, and rename protected names under `-r`
 - `--undo` — replay the journal backwards
 - `-0` — null-separated paths on stdin, for `find -print0`
@@ -333,3 +334,4 @@ The rows above were decided before the code existed. These came up while writing
 - Decision 2 means the output alphabet is **not** `[a-z0-9-]` by default — it is `[a-z0-9-]` plus any letters from scripts the tool does not transliterate. `--ascii` is what narrows it to the strict whitelist.
 - Decision 1 is what protects `1080p`, `h264`, `utf8`, `sha256`, `base64`, `mp4`, `v1` and every hash or UUID in section 13.
 - Decision 4 means the protect list from section 13 is a **warning** list for direct arguments and a **skip** list for recursive sweeps.
+- **Directories read decision 4 backwards, and `-d` is why.** Decision 4 renames an explicitly named file *because* naming it was a choice. For a directory the naming is exactly what cannot be trusted: `keb dir1/dir2` is `keb dir1/dir2/file.png` with the Tab taken one stop early, the mistake is silent, and the damage reaches past the filesystem — every path pointing *into* the directory breaks. So a named directory is **refused** rather than renamed with a warning, and `-d` is the deliberate override. Two exceptions keep it usable: a directory named as the root of a `-r` sweep is passed over in silence, because naming it was how the sweep was asked for rather than a request to rename it; and directories swept up by `-r` are likewise silent, since without `-d` recursion simply means "files" and a warning apiece would bury the run.

@@ -11,14 +11,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// What `-r` should sweep up, from `--files-only` / `--dirs-only`.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Filter {
-    All,
-    FilesOnly,
-    DirsOnly,
-}
-
 pub struct Walk {
     /// Every entry beneath the root, **deepest first**, so that a rename never
     /// invalidates a path still waiting in the queue.
@@ -26,7 +18,7 @@ pub struct Walk {
     pub errors: Vec<(PathBuf, io::Error)>,
 }
 
-pub fn collect(root: &Path, filter: Filter) -> Walk {
+pub fn collect(root: &Path) -> Walk {
     let mut found: Vec<(usize, PathBuf)> = Vec::new();
     let mut errors = Vec::new();
     let mut queue = vec![(0usize, root.to_path_buf())];
@@ -53,14 +45,9 @@ pub fn collect(root: &Path, filter: Filter) -> Walk {
             let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
             let path = entry.path();
 
-            let wanted = match filter {
-                Filter::All => true,
-                Filter::FilesOnly => !is_dir,
-                Filter::DirsOnly => is_dir,
-            };
-            if wanted {
-                found.push((depth + 1, path.clone()));
-            }
+            // Everything is collected; `-d` decides in `step` whether a directory is
+            // renamed, so the walk has no filtering left to do.
+            found.push((depth + 1, path.clone()));
             if is_dir {
                 queue.push((depth + 1, path));
             }
@@ -94,25 +81,17 @@ mod tests {
     }
 
     #[test]
-    fn deepest_first_and_filtered() {
+    fn deepest_first() {
         let t = Temp::new("order");
         std::fs::create_dir_all(t.0.join("a/b")).unwrap();
         std::fs::write(t.0.join("a/b/deep.txt"), "").unwrap();
         std::fs::write(t.0.join("top.txt"), "").unwrap();
 
-        let all = collect(&t.0, Filter::All);
+        let all = collect(&t.0);
         assert!(all.errors.is_empty());
         let depths: Vec<usize> = all.paths.iter().map(|p| p.components().count()).collect();
         assert!(depths.windows(2).all(|w| w[0] >= w[1]), "not deepest-first: {depths:?}");
         assert_eq!(all.paths.len(), 4);
-
-        let files = collect(&t.0, Filter::FilesOnly);
-        assert_eq!(files.paths.len(), 2);
-        assert!(files.paths.iter().all(|p| p.is_file()));
-
-        let dirs = collect(&t.0, Filter::DirsOnly);
-        assert_eq!(dirs.paths.len(), 2);
-        assert!(dirs.paths.iter().all(|p| p.is_dir()));
     }
 
     #[cfg(unix)]
@@ -124,7 +103,7 @@ mod tests {
         // A loop: the link points at the directory that contains it.
         std::os::unix::fs::symlink(&t.0, t.0.join("loop")).unwrap();
 
-        let walk = collect(&t.0, Filter::All);
+        let walk = collect(&t.0);
         assert!(walk.paths.contains(&t.0.join("loop")));
         assert!(!walk.paths.contains(&t.0.join("loop/real")));
         assert_eq!(walk.paths.len(), 3);

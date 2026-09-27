@@ -35,13 +35,31 @@ keb [OPTIONS] <PATHS>...
   -n, --dry-run       Print the plan, change nothing
   -r, --recursive     Recurse into directories
   -f, --force         Overwrite on collision, and rename protected names under -r
+  -d, --allow-dirs    Permit renaming directories. Without it, only files are renamed
       --undo          Undo the most recent run
   -0, --null          Paths on stdin are null-separated, for `find -print0`
-      --dirs-only     Under -r, visit directories only
-      --files-only    Under -r, visit files only
       --separator     Emit this character between words instead of `-`
       --ascii         Narrow the output to ASCII
       --max-length    Override the 255 byte / UTF-16 unit name limit
+```
+
+Directories are left alone unless you ask for them. `keb dir1/dir2` is `keb
+dir1/dir2/file.png` with the Tab taken one stop early, and renaming a directory breaks
+every path that points into it — so it takes `-d`:
+
+```console
+$ keb Photos/2024\ Summer\ Trip
+keb: Photos/2024 Summer Trip: is a directory, skipped (-d allows directories renaming)
+
+$ keb -d Photos/2024\ Summer\ Trip
+Photos/2024 Summer Trip -> Photos/2024-summer-trip
+```
+
+That makes `-r` a files-only sweep, and `-dr` the one that renames folders too:
+
+```console
+$ keb -r Photos      # every filename under Photos, folder names untouched
+$ keb -dr Photos     # folder names as well
 ```
 
 Give it as many names as you like:

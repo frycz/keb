@@ -7,11 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `-d/--allow-dirs`, required before any directory is renamed. `keb dir1/dir2`
+  is `keb dir1/dir2/file.png` with the Tab taken one stop early, and a directory
+  rename breaks every path pointing into it, so it now takes a deliberate flag.
+  A directory named as the root of a `-r` sweep is exempt — naming it was how
+  the sweep was asked for.
+
 ### Changed
 
+- `-r` without `-d` is a files-only sweep: filenames throughout the tree,
+  directory names untouched. `-dr` renames both.
+- Paths given as arguments or on stdin are sorted deepest-first, as a recursive
+  sweep already was. `find -type d | keb` renamed a parent and then failed to
+  find its children; so did `keb A A/B`. Order within one depth is unchanged, so
+  collision suffixes still go to whichever colliding name was given first.
 - `keb` with no paths at a terminal prints `--help` and exits 2, instead of the
   one-line `no paths given`. A pipeline is unaffected: with stdin redirected the
   paths still come from there, and an empty list is still the one-line error.
+
+### Removed
+
+- `--dirs-only` and `--files-only`. `-r` without `-d` is what `--files-only`
+  spelled, and `--dirs-only` is `-d` with no `-r` for one directory, or
+  `find -type d | keb -d` for a tree. `--files-only` also never applied to the
+  directory named on the command line, which it renamed anyway.
 
 ## [0.1.0] — 2026-09-25
 

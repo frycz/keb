@@ -363,7 +363,7 @@ fn a_directory_alone_renames_only_itself() {
     let s = Sandbox::new();
     s.touch("My Dir/My File.md");
 
-    let run = s.keb(["My Dir"]);
+    let run = s.keb(["-d", "My Dir"]);
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert_eq!(s.tree(), ["my-dir", "my-dir/My File.md"]);
 }
@@ -375,7 +375,7 @@ fn recursion_renames_deepest_first() {
     s.touch("My Dir/Sub Dir/Deep File.md");
     s.touch("My Dir/Top File.md");
 
-    let run = s.keb(["-r", "My Dir"]);
+    let run = s.keb(["-dr", "My Dir"]);
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert_eq!(
         s.tree(),
@@ -390,15 +390,28 @@ fn recursion_renames_deepest_first() {
     );
 }
 
+/// Without `-d` a recursive sweep is files-only, which is what `--files-only` used to
+/// spell. The named directory is the traversal root, so it is passed over in silence
+/// rather than refused: naming it was how the sweep was asked for.
 #[test]
-fn recursion_filters() {
+fn recursion_without_allow_dirs_renames_only_files() {
     let s = Sandbox::new();
     s.touch("My Dir/Sub Dir/Deep File.md");
 
-    let run = s.keb(["-r", "--files-only", "My Dir"]);
+    let run = s.keb(["-r", "My Dir"]);
     assert_eq!(run.code, 0, "{}", run.stderr);
-    // the named directory is still renamed — it was chosen, not swept up
-    assert_eq!(s.tree(), ["my-dir", "my-dir/Sub Dir", "my-dir/Sub Dir/deep-file.md"]);
+    assert_eq!(run.stderr, "", "the traversal root must not be complained about");
+    assert_eq!(s.tree(), ["My Dir", "My Dir/Sub Dir", "My Dir/Sub Dir/deep-file.md"]);
+}
+
+#[test]
+fn recursion_with_allow_dirs_renames_directories_too() {
+    let s = Sandbox::new();
+    s.touch("My Dir/Sub Dir/Deep File.md");
+
+    let run = s.keb(["-dr", "My Dir"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(s.tree(), ["my-dir", "my-dir/sub-dir", "my-dir/sub-dir/deep-file.md"]);
 }
 
 // ── §13 Protected names ──────────────────────────────────────────────────────────
@@ -423,13 +436,13 @@ fn a_swept_protected_file_is_skipped() {
     s.touch("My Dir/MyClass.java");
     s.touch("My Dir/My File.md");
 
-    let run = s.keb(["-r", "My Dir"]);
+    let run = s.keb(["-dr", "My Dir"]);
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert!(run.stderr.contains("skipped"));
     assert_eq!(s.tree(), ["my-dir", "my-dir/Makefile", "my-dir/MyClass.java", "my-dir/my-file.md"]);
 
     // ...and -f renames them after all
-    let forced = s.keb(["-r", "-f", "my-dir"]);
+    let forced = s.keb(["-dr", "-f", "my-dir"]);
     assert_eq!(forced.code, 0, "{}", forced.stderr);
     assert_eq!(
         s.tree(),
@@ -537,7 +550,7 @@ fn undo_replays_the_run_backwards() {
     s.touch("My Dir/Sub Dir/Deep File.md");
     s.touch("My Dir/Top File.md");
 
-    assert_eq!(s.keb(["-r", "My Dir"]).code, 0);
+    assert_eq!(s.keb(["-dr", "My Dir"]).code, 0);
     assert_eq!(s.tree()[0], "my-dir");
 
     let undone = s.keb(["--undo"]);
@@ -683,4 +696,105 @@ fn no_paths_without_a_terminal_is_an_error_not_help() {
     assert!(!run.stderr.contains("Usage:"), "help does not belong in a script's stderr");
     assert!(run.stdout.is_empty(), "nothing was renamed, so stdout stays empty");
     assert_eq!(s.tree(), ["My File.md"]);
+}
+
+// ── Input ordering ───────────────────────────────────────────────────────────────
+
+/// `walk::collect` renames deepest-first so a renamed parent cannot invalidate a path
+/// still queued beneath it. Paths given on the command line or on stdin need the same
+/// ordering, because `find` emits parents first: `find -type d | keb` renamed the parent
+/// and then could not find its children.
+#[test]
+fn an_ancestor_named_before_its_descendants_is_renamed_last() {
+    let s = Sandbox::new();
+    s.touch("Dir_A/Sub_B/Deep_X.md");
+
+    let run = s.keb(["-d", "Dir_A", "Dir_A/Sub_B", "Dir_A/Sub_B/Deep_X.md"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(s.tree(), ["dir-a", "dir-a/sub-b", "dir-a/sub-b/deep-x.md"]);
+}
+
+/// The sort is by depth only, and stable, so two paths at the same depth keep the order
+/// they were given. Collision suffixing turns on that: whichever of two colliding names
+/// is reached first keeps the plain form.
+#[test]
+fn reordering_does_not_disturb_collision_suffixes() {
+    let s = Sandbox::new();
+    s.touch("My File.md");
+    s.touch("my_file.md");
+
+    let run = s.keb(["my_file.md", "My File.md"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(s.tree(), ["my-file-2.md", "my-file.md"], "the first given name won");
+}
+
+// ── -d: the directory gate ───────────────────────────────────────────────────────
+
+/// A directory named on its own is refused. `keb dir1/dir2` is `keb dir1/dir2/file.png`
+/// with the Tab taken one stop early, and the mistake is otherwise silent.
+#[test]
+fn a_named_directory_needs_allow_dirs() {
+    let s = Sandbox::new();
+    s.touch("My Dir/Keep Me.md");
+
+    let run = s.keb(["My Dir"]);
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    assert!(
+        run.stderr.contains("is a directory, skipped (-d allows directories renaming)"),
+        "{}",
+        run.stderr
+    );
+    assert_eq!(s.tree(), ["My Dir", "My Dir/Keep Me.md"], "nothing moved");
+}
+
+#[test]
+fn allow_dirs_renames_the_directory_and_nothing_inside_it() {
+    let s = Sandbox::new();
+    s.touch("My Dir/Keep Me.md");
+
+    let run = s.keb(["-d", "My Dir"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(s.tree(), ["my-dir", "my-dir/Keep Me.md"]);
+}
+
+/// The gate gets its answer from `symlink_metadata`, so a symlink pointing at a directory
+/// is not a directory: renaming the link only changes a name and cannot restructure
+/// anything.
+#[cfg(unix)]
+#[test]
+fn a_symlink_to_a_directory_is_not_gated() {
+    let s = Sandbox::new();
+    s.mkdir("Real Dir");
+    std::os::unix::fs::symlink(s.dir.join("Real Dir"), s.dir.join("Link To Dir")).unwrap();
+
+    let run = s.keb(["Link To Dir"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(s.tree(), ["Real Dir", "link-to-dir"]);
+}
+
+/// A directory already in kebab case says nothing and fails nothing — the gate is tested
+/// only once a rename is actually on the table.
+#[test]
+fn an_already_kebab_directory_is_silent_without_allow_dirs() {
+    let s = Sandbox::new();
+    s.mkdir("my-dir");
+
+    let run = s.keb(["my-dir"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.stderr, "");
+    assert_eq!(run.stdout, "");
+}
+
+/// `--undo` restores whatever the run changed, directories included, without `-d`.
+#[test]
+fn undo_restores_a_directory_without_allow_dirs() {
+    let s = Sandbox::new();
+    s.mkdir("My Dir");
+
+    assert_eq!(s.keb(["-d", "My Dir"]).code, 0);
+    assert_eq!(s.tree(), ["my-dir"]);
+
+    let run = s.keb(["--undo"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(s.tree(), ["My Dir"]);
 }

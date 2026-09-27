@@ -15,14 +15,13 @@ mod walk;
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::io::{self, IsTerminal, Read};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{CommandFactory, Parser};
 
 use journal::Journal;
 use rename::{Claims, Mover, Target};
-use walk::Filter;
 
 /// Rename files to kebab case, safely and idempotently.
 ///
@@ -46,6 +45,10 @@ struct Cli {
     #[arg(short = 'f', long)]
     force: bool,
 
+    /// Permit renaming directories. Without it, only files are renamed.
+    #[arg(short = 'd', long)]
+    allow_dirs: bool,
+
     /// Undo the most recent run.
     #[arg(long, conflicts_with_all = ["recursive", "force", "paths"])]
     undo: bool,
@@ -53,14 +56,6 @@ struct Cli {
     /// Paths on stdin are null-separated, for `find -print0`.
     #[arg(short = '0', long = "null")]
     null: bool,
-
-    /// Under -r, visit directories only.
-    #[arg(long, conflicts_with = "files_only", requires = "recursive")]
-    dirs_only: bool,
-
-    /// Under -r, visit files only.
-    #[arg(long, requires = "recursive")]
-    files_only: bool,
 
     /// Emit this character between words instead of `-`.
     #[arg(long, value_name = "CHAR")]
@@ -124,7 +119,7 @@ fn run(cli: &Cli) -> io::Result<Outcome> {
         return Err(io::Error::other("no paths given; pass paths as arguments or on stdin"));
     }
 
-    let mut mover = Mover::new(cli.force, cli.dry_run);
+    let mut mover = Mover::new(cli.force, cli.dry_run, cli.allow_dirs);
     let mut claims = Claims::default();
     let mut partial = false;
 
@@ -143,6 +138,11 @@ fn run(cli: &Cli) -> io::Result<Outcome> {
 struct Item {
     path: PathBuf,
     explicit: bool,
+    /// A directory named as the root of a `-r` traversal. Naming it was how the sweep was
+    /// asked for, not a request to rename it, so `-d` passes over it in silence instead of
+    /// refusing — otherwise the ordinary `keb -r Dir` would end in a complaint about the
+    /// one argument it could not have done without.
+    root: bool,
 }
 
 /// Plan and perform one rename. `false` means the run is partial.
@@ -180,6 +180,28 @@ fn step(
     if *new == *name {
         // Already kebab case — silent, per the stream contract, but still spoken for
         // so that a sibling renaming onto it gets suffixed instead.
+        claims.taken.insert(path.clone());
+        return Ok(true);
+    }
+
+    // A directory rename invalidates every path that points into it, and the name is as
+    // often reached by completion as chosen — `keb dir1/dir2` is `keb dir1/dir2/file.png`
+    // with the Tab taken one stop early. So `-d` gates it. The test runs here rather than
+    // in `expand` so that a directory already in kebab case stays silent above.
+    //
+    // This is decision 4 read backwards, and deliberately: that rule renames an
+    // explicitly named file *because* naming it was a choice, but for a directory the
+    // naming is exactly what cannot be trusted. So an explicit directory is refused and
+    // says so, while one `-r` swept up is passed over in silence — without `-d`, `-r`
+    // simply means "files", and a warning per directory would bury the run.
+    if !mover.allow_dirs && rename::is_dir(path) {
+        if item.explicit && !item.root {
+            eprintln!(
+                "keb: {}: is a directory, skipped (-d allows directories renaming)",
+                path.display()
+            );
+            return Ok(false);
+        }
         claims.taken.insert(path.clone());
         return Ok(true);
     }
@@ -235,19 +257,29 @@ fn step(
     Ok(true)
 }
 
+/// Path components, ignoring `.`. An ancestor always has fewer of them than its
+/// descendants, which is the only property the deepest-first invariant needs — and it
+/// holds without touching the filesystem, so no symlink is resolved to obtain it.
+fn depth(path: &Path) -> usize {
+    path.components().filter(|c| !matches!(c, Component::CurDir)).count()
+}
+
 /// Turn the input list into the work list: every path, deepest first, with duplicates
 /// removed.
 fn expand(inputs: &[PathBuf], cli: &Cli, partial: &mut bool) -> Vec<Item> {
-    let filter = match (cli.dirs_only, cli.files_only) {
-        (true, _) => Filter::DirsOnly,
-        (_, true) => Filter::FilesOnly,
-        _ => Filter::All,
-    };
+    // `walk::collect` holds the deepest-first invariant inside one input, but the inputs
+    // themselves arrive in whatever order argv or stdin gave them — and `find` emits
+    // parents first, so `find -type d | keb` would rename a parent and then fail to find
+    // its children. Sort so an ancestor is always renamed after its descendants. The sort
+    // is stable, and ties are left in the given order, because collision suffixing turns
+    // on which of two colliding names is reached first.
+    let mut order: Vec<&PathBuf> = inputs.iter().collect();
+    order.sort_by_key(|path| std::cmp::Reverse(depth(path)));
 
     let mut items = Vec::new();
     let mut seen = HashSet::new();
 
-    for input in inputs {
+    for input in order {
         if !rename::exists(input) {
             eprintln!("keb: {}: no such file or directory", input.display());
             *partial = true;
@@ -256,16 +288,22 @@ fn expand(inputs: &[PathBuf], cli: &Cli, partial: &mut bool) -> Vec<Item> {
 
         // The children come first and deepest-first, so that renaming a directory
         // never invalidates a path still queued beneath it.
-        if cli.recursive && input.is_dir() {
-            let walk = walk::collect(input, filter);
+        let mut root = false;
+        if cli.recursive && rename::is_dir(input) {
+            root = true;
+            let walk = walk::collect(input);
             for (path, e) in walk.errors {
                 eprintln!("keb: {}: {e}", path.display());
                 *partial = true;
             }
-            items.extend(walk.paths.into_iter().map(|path| Item { path, explicit: false }));
+            items.extend(walk.paths.into_iter().map(|path| Item {
+                path,
+                explicit: false,
+                root: false,
+            }));
         }
 
-        items.push(Item { path: input.clone(), explicit: true });
+        items.push(Item { path: input.clone(), explicit: true, root });
     }
 
     // A path that is both swept up and named on the command line was still chosen, and
@@ -287,7 +325,7 @@ fn undo(cli: &Cli, journal: &mut Journal) -> io::Result<Outcome> {
         return Ok(Outcome::Clean);
     }
 
-    let mut mover = Mover::new(true, cli.dry_run);
+    let mut mover = Mover::new(true, cli.dry_run, true);
     let mut discard = Journal::disabled();
     let mut partial = false;
     // Whether anything is left that a second `--undo` could still achieve. A record
