@@ -34,8 +34,8 @@ keb [OPTIONS] <PATHS>...
 
   -n, --dry-run       Print the plan, change nothing
   -r, --recursive     Recurse into directories
-  -f, --force         Overwrite on collision, and rename protected names under -r
   -d, --allow-dirs    Permit renaming directories. Without it, only files are renamed
+  -f, --force         Overwrite on collision, and rename protected names under -r
       --undo          Undo the most recent run
   -0, --null          Paths on stdin are null-separated, for `find -print0`
       --separator     Emit this character between words instead of `-`
@@ -43,26 +43,11 @@ keb [OPTIONS] <PATHS>...
       --max-length    Override the 255 byte / UTF-16 unit name limit
 ```
 
-Directories are left alone unless you ask for them. `keb dir1/dir2` is `keb
-dir1/dir2/file.png` with the Tab taken one stop early, and renaming a directory breaks
-every path that points into it — so it takes `-d`:
+## Examples
 
-```console
-$ keb Photos/2024\ Summer\ Trip
-keb: Photos/2024 Summer Trip: is a directory, skipped (-d allows directories renaming)
+### Many files at once
 
-$ keb -d Photos/2024\ Summer\ Trip
-Photos/2024 Summer Trip -> Photos/2024-summer-trip
-```
-
-That makes `-r` a files-only sweep, and `-dr` the one that renames folders too:
-
-```console
-$ keb -r Photos      # every filename under Photos, folder names untouched
-$ keb -dr Photos     # folder names as well
-```
-
-Give it as many names as you like:
+Pass as many names as you like. Files already in kebab case print nothing at all.
 
 ```console
 $ keb *
@@ -71,18 +56,151 @@ Report (Final) [v2].md -> report-final-v2.md
 XMLHttpRequest.MD -> xml-http-request.md
 ```
 
-Only the basename changes — parent directories are never touched.
+Globs are expanded by your shell, not by keb, so anything your shell matches works — and matching follows your shell's rules, including its case sensitivity.
+
+```console
+$ keb *Photos*.png
+Summer Photos 2024.png -> summer-photos-2024.png
+```
+
+Only the basename changes. Parent directories are never touched.
 
 ```console
 $ keb "notes/My Meeting Notes.md"
 notes/My Meeting Notes.md -> notes/my-meeting-notes.md
 ```
 
+### Look before you leap: `-n`
+
+`-n` prints exactly what would happen and changes nothing.
+
+```console
+$ keb -n *
+My File.md -> my-file.md
+Report (Final) [v2].md -> report-final-v2.md
+```
+
+### Changed your mind: `--undo`
+
+`--undo` replays the most recent run backwards.
+
+```console
+$ keb "My File.md"
+My File.md -> my-file.md
+$ keb --undo
+my-file.md -> My File.md
+```
+
+Every run is journalled *before* it happens, not after, so even an interrupted rename can be unwound. The journal lives in `$XDG_STATE_HOME/keb/journal.tsv` (`%LOCALAPPDATA%\keb\journal.tsv` on Windows) and keeps the last 20 runs. Undo restores names; it never destroys whatever has taken a name back since.
+
+### Whole trees: `-r`
+
+`-r` recurses, renaming filenames at every depth and leaving folder names alone.
+
+```console
+$ keb -r docs
+docs/Guides/Getting Started.md -> docs/Guides/getting-started.md
+docs/README Draft.md -> docs/readme-draft.md
+```
+
+Deepest paths are renamed first, so a renamed folder can never invalidate a path still queued beneath it.
+
+### Directories: `-d`
+
+Directories are left alone unless you ask for them, because `keb dir1/dir2` is `keb dir1/dir2/file.png` with the Tab taken one stop early — and renaming a directory breaks every path that points into it.
+
+```console
+$ keb "Photos/2024 Summer Trip"
+keb: Photos/2024 Summer Trip: is a directory, skipped (-d allows directories renaming)
+
+$ keb -d "Photos/2024 Summer Trip"
+Photos/2024 Summer Trip -> Photos/2024-summer-trip
+```
+
+That is also how you normalise folder names while leaving load-bearing filenames alone — handy when sidecar files pair with their raw by basename. Combine it with `-r` to rename both:
+
+```console
+$ keb -dr Photos
+Photos/2024 Summer Trip/IMG_1234.NEF -> Photos/2024 Summer Trip/img-1234.nef
+Photos/2024 Summer Trip -> Photos/2024-summer-trip
+Photos -> photos
+```
+
+### Collisions and protected names: `-f`
+
+Two different names can produce the same kebab form. keb suffixes rather than overwrite, and the suffixed name is itself already kebab case:
+
+```console
+$ keb "My File.md" "my_file.md"
+My File.md -> my-file.md
+my_file.md -> my-file-2.md
+```
+
+`-f` overwrites instead, and says so:
+
+```console
+$ keb -f "My File.md" "my_file.md"
+My File.md -> my-file.md
+keb: my-file.md: overwriting
+my_file.md -> my-file.md
+```
+
+A directory in the way is never overwritten, at any force level — keb falls back to suffixing and tells you.
+
+`-f` also overrules the protect list. A protected name you type yourself is renamed with a warning, because you picked it; one found under `-r` is skipped, because you did not:
+
+```console
+$ keb -r src
+keb: src/Makefile: skipped, a name a build tool looks up literally (-f renames it)
+src/My Component.tsx -> src/my-component.tsx
+
+$ keb src/Makefile
+keb: src/Makefile: renaming a name a build tool looks up literally
+src/Makefile -> src/makefile
+```
+
+### Different output: `--separator`, `--ascii`, `--max-length`
+
+`--separator` swaps the word separator, which is how you get snake case:
+
+```console
+$ keb --separator=_ "My File.md"
+My File.md -> my_file.md
+```
+
+By default, scripts are transliterated only where that is deterministic; CJK, Thai, Arabic, Hebrew and Indic are kept as they are. `--ascii` drops them:
+
+```console
+$ keb "日本語 Notes.md"
+日本語 Notes.md -> 日本語-notes.md
+
+$ keb --ascii "日本語 Notes.md"
+日本語 Notes.md -> notes.md
+```
+
+Accented Latin, Cyrillic and Greek romanize either way, so `--ascii` changes nothing for them:
+
+```console
+$ keb "Café Ärger.md"
+Café Ärger.md -> cafe-arger.md
+```
+
+`--max-length` tightens the length budget, counted in both bytes and UTF-16 code units over the whole filename. The stem absorbs the truncation, on a grapheme boundary, and the extension is kept whole:
+
+```console
+$ keb --max-length 20 "Quarterly Report On Widget Sales.pdf"
+Quarterly Report On Widget Sales.pdf -> quarterly-report.pdf
+```
+
+Reach for it when the destination is tighter than your filesystem — eCryptfs caps names at 143, ISO/Joliet at 64, and Windows budgets 260 characters for the whole path.
+
+## Output and exit codes
+
 Renames print to **stdout** as `old -> new`, one per line. Warnings and errors go to **stderr**. So `keb x >/dev/null` is a quiet mode and `keb x 2>/dev/null` silences warnings, without either needing a flag.
 
-Files that are already kebab case print nothing at all.
-
 Exit codes: `0` all good, `1` partial, `2` error. A single failed rename does not abort the run.
+
+## Composition
 
 Composes with anything that lists paths:
 
@@ -91,12 +209,9 @@ find . -name '*.md' | keb
 find . -name '*.md' -print0 | keb -0
 ```
 
-Changed your mind:
+Use `-0` with `find -print0` in scripts. A newline is a legal character in a filename, so a newline-separated list is ambiguous — and the failure is silent, because the two halves of a split name may both match something else.
 
-```console
-$ keb --undo
-my-meeting-notes.md -> My Meeting Notes.md
-```
+Paths are sorted deepest-first however they arrive, so `find -type d | keb -d` is safe even though `find` emits parents first.
 
 ## What it does to a name
 
@@ -126,7 +241,7 @@ Three rules do most of the work:
 
 **Extensions are preserved and lowercased.** Compound extensions come from a whitelist — `.tar.gz`, `.d.ts`, `.min.js` and friends survive whole. A leading dot marks a dotfile, not an extension, so `.gitignore` is left alone. A dot between digits is a version segment, not a separator, so `v1.2.3` and `192.168.1.1` survive.
 
-**Scripts are transliterated only where that is deterministic.** Latin-extended, Cyrillic (BGN/PCGN) and Greek romanize to ASCII. CJK, Thai, Arabic, Hebrew and Indic are kept as they are, because 東京 → `tokyo` needs a dictionary, not a codepoint table. `--ascii` narrows the output to `[a-z0-9-]` and drops the rest.
+**Scripts are transliterated only where that is deterministic.** Latin-extended, Cyrillic (BGN/PCGN) and Greek romanize to ASCII. CJK, Thai, Arabic, Hebrew and Indic are kept as they are, because 東京 → `tokyo` needs a dictionary, not a codepoint table.
 
 ## What it refuses to do
 
@@ -140,54 +255,7 @@ A name whose *correct* kebab form breaks something is protected. That is the who
 
 **Four one-offs.** `*.java`, whose name must match its public class; `*.icloud`, a placeholder for a file not downloaded yet; `Icon\r`, the macOS custom-icon file; and the Windows reserved device names `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9` and `LPT1`–`LPT9`, with or without an extension, in any case. `COM0`, `COM10` and `CONFIG` are not reserved, and are renamed like anything else.
 
-Naming one on the command line renames it anyway, with a warning — you picked it. Finding one under `-r` skips it, because you did not:
-
-```console
-$ keb -r src
-keb: src/Makefile: skipped, a name a build tool looks up literally (-f renames it)
-src/My Component.tsx -> src/my-component.tsx
-```
-
 A name that transforms to nothing — `🚀.md`, `___.md` — is refused rather than turned into `untitled.md`, which would throw away the only thing that distinguished it.
-
-## Why not a one-line regex
-
-Three guarantees, in priority order:
-
-1. **No loss** — no file is destroyed, overwritten, or left unreachable
-2. **Idempotent** — running it twice changes nothing the second time
-3. **Injective** — two different files never collapse into one
-
-The third can't come from the transform alone: `My File` and `my_file` both produce `my-file`. So the transform is deliberately not injective, and the filesystem layer restores it by suffixing:
-
-```console
-$ keb "My File.md" "my_file.md"
-My File.md -> my-file.md
-my_file.md -> my-file-2.md
-```
-
-The rest is the long tail a regex gets wrong:
-
-- On a case-insensitive filesystem, `File.md` → `file.md` is a same-inode rename, and a naive existence check reports a collision that isn't one. `keb` compares inodes and goes through a temporary name
-- The usual "decompose and strip accents" trick turns `Łódź.md` into `d.md`, because `ł` has no decomposition
-- Lowercasing under a Turkish locale turns `TITLE` into `tıtle`
-- `2024-01-02T10:30:00Z.log` → `2024-01-02-t10-30-00-z.log` is technically correct and practically vandalism
-- `Makefile` → `makefile` breaks the build; so does renaming `MyClass.java`
-- Inside a git repository a tracked file moves with `git mv`, so staged state and rename detection survive
-- A filename on Linux is a byte string, not text; an invalid-UTF-8 name is renamed anyway, and every dropped byte is reported
-
-## Undo
-
-Every run is journalled before it happens, not after, so an interrupted two-step rename can still be unwound. `--undo` replays the most recent run backwards:
-
-```console
-$ keb -r docs
-docs/Getting Started.md -> docs/getting-started.md
-$ keb --undo
-docs/getting-started.md -> docs/Getting Started.md
-```
-
-The journal lives in `$XDG_STATE_HOME/keb/journal.tsv` (`%LOCALAPPDATA%\keb\journal.tsv` on Windows) and keeps the last 20 runs.
 
 ## As a library
 
@@ -211,16 +279,6 @@ assert_eq!(kebab_with("My File.md", &snake), "my_file.md");
 An empty return value means there is no kebab name for that input — the caller should leave the file alone.
 
 `--no-default-features` drops the CLI dependencies. Docs at [docs.rs/keb](https://docs.rs/keb).
-
-## No config file
-
-`keb` operates on arbitrary paths, often outside any project. A config file up the tree would mean the same command doing different things in different directories — which matters more here than for a formatter, because renames are destructive and one-shot. A dry run in one directory would stop predicting behavior in another.
-
-The shell alias is the config file:
-
-```sh
-alias sn='keb --separator=_'
-```
 
 ## License
 
