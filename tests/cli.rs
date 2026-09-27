@@ -663,3 +663,24 @@ fn undo_only_reaches_the_most_recent_run() {
     assert_eq!(s.keb(["--undo"]).code, 0);
     assert_eq!(s.tree(), ["Two File.md", "one-file.md"]);
 }
+
+// ── Usage ────────────────────────────────────────────────────────────────────────
+
+/// A bare `keb` shows `--help`, but only at a terminal. This runs the binary with stdin
+/// closed rather than on a pty, so it pins the *other* half of that rule: a pipeline
+/// supplies its paths on stdin and legitimately passes no arguments, so the no-argument
+/// case must not be intercepted during parsing. Reaching for clap's
+/// `arg_required_else_help` is exactly the change this catches — it would also break
+/// `reads_a_list_from_stdin`, which is the same rule seen from the other side.
+#[test]
+fn no_paths_without_a_terminal_is_an_error_not_help() {
+    let s = Sandbox::new();
+    s.touch("My File.md");
+
+    let run = s.keb::<[&str; 0], &str>([]);
+    assert_eq!(run.code, 2, "{}", run.stderr);
+    assert!(run.stderr.contains("no paths given"), "got: {}", run.stderr);
+    assert!(!run.stderr.contains("Usage:"), "help does not belong in a script's stderr");
+    assert!(run.stdout.is_empty(), "nothing was renamed, so stdout stays empty");
+    assert_eq!(s.tree(), ["My File.md"]);
+}

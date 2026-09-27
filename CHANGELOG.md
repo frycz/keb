@@ -5,6 +5,14 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `keb` with no paths at a terminal prints `--help` and exits 2, instead of the
+  one-line `no paths given`. A pipeline is unaffected: with stdin redirected the
+  paths still come from there, and an empty list is still the one-line error.
+
 ## [0.1.0] — 2026-09-25
 
 The first release that actually renames files. `0.0.1` printed the plan and

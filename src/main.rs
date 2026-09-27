@@ -18,7 +18,7 @@ use std::io::{self, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use journal::Journal;
 use rename::{Claims, Mover, Target};
@@ -81,6 +81,7 @@ fn main() -> ExitCode {
     match run(&cli) {
         Ok(Outcome::Clean) => ExitCode::from(0),
         Ok(Outcome::Partial) => ExitCode::from(1),
+        Ok(Outcome::Usage) => ExitCode::from(2),
         Err(e) => {
             eprintln!("keb: {e}");
             ExitCode::from(2)
@@ -91,9 +92,22 @@ fn main() -> ExitCode {
 enum Outcome {
     Clean,
     Partial,
+    /// Nothing was asked for, and `--help` has been printed instead.
+    Usage,
 }
 
 fn run(cli: &Cli) -> io::Result<Outcome> {
+    // A bare `keb` typed at a prompt is someone who has not read `--help` yet, and a
+    // one-line complaint is a poor place to learn that `-n` and `--undo` exist. Show the
+    // help instead. This cannot be clap's `arg_required_else_help`, which fires during
+    // parsing and so would break `find . -name '*.md' | keb`: a pipeline supplies its
+    // paths on stdin and legitimately has no arguments at all. Hence the terminal test —
+    // and `--undo`, which takes no paths either, is not a usage error.
+    if cli.paths.is_empty() && !cli.undo && io::stdin().is_terminal() {
+        Cli::command().write_help(&mut io::stderr())?;
+        return Ok(Outcome::Usage);
+    }
+
     let opts = options(cli)?;
     // `--undo` reads the journal even under `-n`; only a dry *rename* writes nothing.
     let mut journal = if cli.dry_run && !cli.undo { Journal::disabled() } else { Journal::open()? };
@@ -104,6 +118,9 @@ fn run(cli: &Cli) -> io::Result<Outcome> {
 
     let inputs = inputs(cli)?;
     if inputs.is_empty() {
+        // Only a non-interactive run reaches this: a pipeline that produced an empty
+        // list. That is a real error rather than a question of usage, so it stays a
+        // one-line diagnostic — help text in a script's stderr is noise.
         return Err(io::Error::other("no paths given; pass paths as arguments or on stdin"));
     }
 
