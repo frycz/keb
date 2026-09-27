@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--format=arrow|old|new|json|null`, choosing what each rename looks like on
+  stdout. `json` and `null` are the only two that survive a filename containing a
+  newline or a literal ` -> `, both of which are legal and both of which make the
+  default `arrow` form ambiguous to parse — the same hole `-0` closes on input.
+- `--absolute`, printing full paths. Lexical (`std::path::absolute`), so symlinks
+  are not resolved: keb renames the link, not its target.
+- A summary line on stderr, so a dry run is distinguishable from a real one. The
+  dry run leads with `dry run, nothing changed (N renames planned)`; a real run
+  opens with `Renaming...` and closes with `N files renamed`. Shown only when
+  stderr is a terminal, so pipeline output is unchanged.
 - `-d/--allow-dirs`, required before any directory is renamed. `keb dir1/dir2`
   is `keb dir1/dir2/file.png` with the Tab taken one stop early, and a directory
   rename breaks every path pointing into it, so it now takes a deliberate flag.
@@ -29,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `--undo`, and the write-ahead journal behind it. A backstop that repairs a
+  mistake is worth less than `-n`, which prevents it, and the journal cost a
+  module, a state directory and a flush on every rename. **There is now no way to
+  reverse a run** — `-n` first. The accepted loss is that an interrupted two-step
+  case-only rename is no longer recoverable. `$XDG_STATE_HOME/keb/journal.tsv`
+  and `%LOCALAPPDATA%\keb\journal.tsv` are no longer read or written, and can be
+  deleted.
 - `--dirs-only` and `--files-only`. `-r` without `-d` is what `--files-only`
   spelled, and `--dirs-only` is `-d` with no `-r` for one directory, or
   `find -type d | keb -d` for a tree. `--files-only` also never applied to the

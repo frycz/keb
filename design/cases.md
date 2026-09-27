@@ -18,7 +18,7 @@ The tool does **not**:
 
 - touch file contents
 - update inbound references (links, imports, `<img src>`) — different blast radius, different undo story
-- decide *which* files to act on beyond `-r` and its filters — that is `find`'s job, and stdin composes
+- decide *which* files to act on beyond `-r` — that is `find`'s job, and stdin composes
 - renumber, zero-pad, or reformat dates
 - deduplicate files
 - read a config file or environment variables — see "Why no config file" below
@@ -28,7 +28,7 @@ The tool does **not**:
 | Layer | Type | Dominant quality | Testing |
 |---|---|---|---|
 | **Transform** — `String → String`, pure | Data transformer | Correctness, totality | Property tests + fuzz over arbitrary bytes |
-| **Filesystem** — plan, journal, rename | Stateful tool | Safety | Atomicity, reversibility, TOCTOU |
+| **Filesystem** — plan, rename | Stateful tool | Safety | Atomicity, TOCTOU |
 
 Sections 1–5 and 9–11 specify the transform. Sections 6–7 and 12 specify the filesystem layer. Keep them separately testable.
 
@@ -37,7 +37,6 @@ Sections 1–5 and 9–11 specify the transform. Sections 6–7 and 12 specify t
 - `keb(keb(x)) == keb(x)` for all `x`
 - `keb` never throws, for any byte string — including invalid UTF-8
 - output is a valid filename on every target filesystem
-- every rename is reconstructible from the journal
 - distinct input paths never resolve to the same output path
 
 ## Every case the tool should handle
@@ -117,7 +116,7 @@ Grouped so behavior can be agreed per group.
 
 - `keb Pth_to-file.md` → only the **basename** is renamed; `Pth_to/` parent untouched.
 - `keb "./A Dir/My File.md"` → `./A Dir/my-file.md`.
-- Directories: rename the dir itself; `-r` to recurse into contents. Rename deepest-first so paths stay valid.
+- Directories: `-d` to rename the dir itself, `-r` to recurse into contents, `-dr` for both. Rename deepest-first so paths stay valid.
 - Multiple args + shell globs: `keb *.md`.
 - `-` / stdin list piped in (`find … | keb`).
 - Filename starting with `-` → `--` handling so it isn't parsed as a flag.
@@ -150,7 +149,7 @@ Flag *count* is a symptom, not the disease — `rg` has ~90 flags and is a deep 
 |---|---|---|---|
 | `--separator` | 10 (emit) | zero — identical 14 sections, one char differs at the end | cheap |
 | `--ascii` | 10 (whitelist) | one, and it is the output contract | cheap |
-| `-n`, `-r`, `-f`, `--undo` | filesystem layer | none — never touches the transform | cheap |
+| `-n`, `-r`, `-d`, `-f`, `--format`, `--absolute` | filesystem layer | none — never touches the transform | cheap |
 | `--no-lowercase` | 8 | invalidates the output contract; result is not kebab | rejected |
 | `--no-transliterate` | 4–6 | forks the deep core, doubles every Unicode case | rejected |
 
@@ -166,7 +165,8 @@ Flag *count* is a symptom, not the disease — `rg` has ~90 flags and is a deep 
 - `-r` — recurse
 - `-d` / `--allow-dirs` — permit renaming directories at all; without it `-r` is a files-only sweep
 - `-f` — force: overwrite on collision, and rename protected names under `-r`
-- `--undo` — replay the journal backwards
+- `--format` — `arrow` (default), `old`, `new`, `json`, `null`. `json` and `null` are the only two a filename containing a newline or a literal ` -> ` survives
+- `--absolute` — print absolute paths, lexically (`std::path::absolute`, never `canonicalize`: keb renames the link, not its target)
 - `-0` — null-separated paths on stdin, for `find -print0`
 
 ### Stream contract
@@ -261,7 +261,7 @@ Two traps baked into this order:
 - **Companion files** — `._file` (AppleDouble), `~$doc.docx` (Office lock), `.#file` (emacs), `file.icloud` stubs. Renaming one of a pair breaks the pairing.
 - **`Icon\r`** — a real macOS file whose name ends in a literal carriage return.
 - **Bundle directories** — `Foo.app`, `Bar.framework`, `.rtfd`. The directory name is part of a contract with `Info.plist`; renaming breaks the bundle. Refuse or warn.
-- **Atomicity** — `rename()` is atomic, but the two-step case-only rename is not. A crash leaves the temp name behind, so the undo journal must be write-**ahead**, not write-after.
+- **Atomicity** — `rename()` is atomic, but the two-step case-only rename is not. A crash leaves the temp name behind, reachable from nothing. Accepted: there is no journal and no recovery, which is the price of dropping `--undo`.
 - **TOCTOU** — a file can move or vanish between plan and execute; dry-run output can lie.
 - **Recursion hazards** — symlink loops, mount-point crossing, mutating a directory while iterating it (collect the full list first, rename deepest-first).
 - **Immutable flags** (`chflags uchg`), SIP-protected paths, cloud placeholder/dataless files that download on access.
@@ -327,7 +327,7 @@ The rows above were decided before the code existed. These came up while writing
 | 18 | Target is a *directory* | **Never overwritten, at any force level** — replacing it means deleting its contents, which invariant 1 outranks. `-f` falls back to suffixing and says so | — |
 | 19 | Combining marks on a kept script (§10, Indic) | **A mark is stripped only when its base is ASCII.** After steps 4 and 6 every romanized script *is* ASCII, so an ASCII base means "Latin letter wearing an accent" and stripping is the point. Devanagari keeps its virama and vowel signs. A mark orphaned by a stripped base (an emoji, say) is dropped, not re-attached — keeping it breaks idempotency | `--ascii` drops them all |
 | 20 | Zero-width space (§1 vs §11) | **A separator, not a deletion.** §1 groups U+200B with NBSP, §11 lists it among the invisibles to strip. It is a *space*; the joiners and marks around it are not, and those are still deleted | — |
-| 21 | Journal location | `$XDG_STATE_HOME/keb/journal.tsv`, or `%LOCALAPPDATA%\keb\journal.tsv`; last 20 runs. Reading a state-directory variable is not the configuration §8 rules out — it says where to put a file, never what the tool does to a name | — |
+| 21 | Reversibility | **None.** `--undo` and its write-ahead journal were removed: a backstop that repairs a mistake is worth less than `-n`, which prevents it, and the journal cost a module, a state directory and a flush per rename. The accepted loss is that an interrupted two-step rename is no longer recoverable | `-n` first |
 
 ### Consequences worth restating
 

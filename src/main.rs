@@ -7,7 +7,6 @@
 //! **stdout** as `old -> new`, warnings and errors to **stderr**. That split is what
 //! `--verbose` and `--quiet` would have been, so neither flag exists.
 
-mod journal;
 mod protect;
 mod rename;
 mod walk;
@@ -20,7 +19,6 @@ use std::process::ExitCode;
 
 use clap::{CommandFactory, Parser};
 
-use journal::Journal;
 use rename::{Claims, Mover, Target};
 
 /// Rename files to kebab case, safely and idempotently.
@@ -49,10 +47,6 @@ struct Cli {
     #[arg(short = 'd', long)]
     allow_dirs: bool,
 
-    /// Undo the most recent run.
-    #[arg(long, conflicts_with_all = ["recursive", "force", "paths"])]
-    undo: bool,
-
     /// Paths on stdin are null-separated, for `find -print0`.
     #[arg(short = '0', long = "null")]
     null: bool,
@@ -68,6 +62,31 @@ struct Cli {
     /// Override the 255 byte / UTF-16 unit name limit.
     #[arg(long, value_name = "N")]
     max_length: Option<usize>,
+
+    /// How to print each rename.
+    #[arg(long, value_name = "FMT", default_value = "arrow")]
+    format: Format,
+
+    /// Print absolute paths. Lexical only — symlinks are not resolved.
+    #[arg(long)]
+    absolute: bool,
+}
+
+/// One record per rename on stdout. `arrow` is for reading; `json` and `null` are the
+/// only two that survive a filename containing a newline or a literal ` -> `, both of
+/// which are legal on Unix and both of which make `arrow` ambiguous to parse.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Format {
+    /// `old -> new`
+    Arrow,
+    /// The name before the rename.
+    Old,
+    /// The name after the rename.
+    New,
+    /// One JSON object per line: `{"from":"…","to":"…"}`.
+    Json,
+    /// `old\0new\0`, for `xargs -0`.
+    Null,
 }
 
 fn main() -> ExitCode {
@@ -93,23 +112,16 @@ enum Outcome {
 
 fn run(cli: &Cli) -> io::Result<Outcome> {
     // A bare `keb` typed at a prompt is someone who has not read `--help` yet, and a
-    // one-line complaint is a poor place to learn that `-n` and `--undo` exist. Show the
+    // one-line complaint is a poor place to learn that `-n` and `--format` exist. Show the
     // help instead. This cannot be clap's `arg_required_else_help`, which fires during
     // parsing and so would break `find . -name '*.md' | keb`: a pipeline supplies its
-    // paths on stdin and legitimately has no arguments at all. Hence the terminal test —
-    // and `--undo`, which takes no paths either, is not a usage error.
-    if cli.paths.is_empty() && !cli.undo && io::stdin().is_terminal() {
+    // paths on stdin and legitimately has no arguments at all. Hence the terminal test.
+    if cli.paths.is_empty() && io::stdin().is_terminal() {
         Cli::command().write_help(&mut io::stderr())?;
         return Ok(Outcome::Usage);
     }
 
     let opts = options(cli)?;
-    // `--undo` reads the journal even under `-n`; only a dry *rename* writes nothing.
-    let mut journal = if cli.dry_run && !cli.undo { Journal::disabled() } else { Journal::open()? };
-
-    if cli.undo {
-        return undo(cli, &mut journal);
-    }
 
     let inputs = inputs(cli)?;
     if inputs.is_empty() {
@@ -121,16 +133,117 @@ fn run(cli: &Cli) -> io::Result<Outcome> {
 
     let mut mover = Mover::new(cli.force, cli.dry_run, cli.allow_dirs);
     let mut claims = Claims::default();
+    let mut out = Out::new(cli);
     let mut partial = false;
 
-    journal.begin()?;
+    // A dry run buffers, so that the count can lead: nothing is happening, so there is
+    // no progress to report and nothing is lost by holding the lines back. A real run
+    // must stream, which is why its header is neutral and its count comes last — saying
+    // "2 files renamed" up front would be a lie the moment one hits EPERM.
+    if !cli.dry_run {
+        out.note("Renaming...");
+    }
+
     for item in expand(&inputs, cli, &mut partial) {
-        if !step(&item, &opts, &mut mover, &mut claims, &mut journal)? {
+        if !step(&item, &opts, &mut mover, &mut claims, &mut out)? {
             partial = true;
         }
     }
 
+    let n = mover.renamed();
+    match cli.dry_run {
+        true => out.note(&format!("dry run, nothing changed ({n} renames planned)")),
+        false => out.note(&format!("{n} {} renamed", if n == 1 { "file" } else { "files" })),
+    }
+    out.finish()?;
+
     Ok(if partial { Outcome::Partial } else { Outcome::Clean })
+}
+
+/// The output side of the stream contract: renames to **stdout** in the chosen format,
+/// notes to **stderr**.
+///
+/// A dry run buffers its renames so the planned count can be printed first; a real run
+/// writes them through as they happen. Notes are suppressed when stderr is not a
+/// terminal, which keeps a pipeline's output byte-identical to what it was before the
+/// summary lines existed — and is why no `--quiet` flag is needed to get it back.
+struct Out {
+    format: Format,
+    absolute: bool,
+    /// `Some` while a dry run is holding its lines back.
+    buffer: Option<Vec<u8>>,
+    notes: bool,
+}
+
+impl Out {
+    fn new(cli: &Cli) -> Out {
+        Out {
+            format: cli.format,
+            absolute: cli.absolute,
+            buffer: cli.dry_run.then(Vec::new),
+            notes: io::stderr().is_terminal(),
+        }
+    }
+
+    fn note(&self, text: &str) {
+        if self.notes {
+            eprintln!("keb: {text}");
+        }
+    }
+
+    fn rename(&mut self, from: &Path, to: &Path) {
+        let (from, to) = (self.shown(from), self.shown(to));
+        let line = match self.format {
+            Format::Arrow => format!("{} -> {}\n", from.display(), to.display()),
+            Format::Old => format!("{}\n", from.display()),
+            Format::New => format!("{}\n", to.display()),
+            Format::Json => {
+                format!("{{\"from\":{},\"to\":{}}}\n", json_string(&from), json_string(&to))
+            }
+            Format::Null => format!("{}\0{}\0", from.display(), to.display()),
+        };
+        match &mut self.buffer {
+            Some(buf) => buf.extend_from_slice(line.as_bytes()),
+            None => print!("{line}"),
+        }
+    }
+
+    /// `std::path::absolute`, never `canonicalize`: canonicalize resolves symlinks, and
+    /// keb renames the link rather than its target, so a canonical path could name
+    /// something other than the thing that moved.
+    fn shown(&self, path: &Path) -> PathBuf {
+        match self.absolute {
+            true => std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()),
+            false => path.to_path_buf(),
+        }
+    }
+
+    /// Flush a dry run's held-back lines. A real run has already printed them.
+    fn finish(&mut self) -> io::Result<()> {
+        if let Some(buf) = self.buffer.take() {
+            io::Write::write_all(&mut io::stdout(), &buf)?;
+        }
+        Ok(())
+    }
+}
+
+/// A JSON string literal. Only the escapes RFC 8259 requires, over a lossy decode —
+/// a filename is bytes, and invalid UTF-8 has already been reported by `step`.
+fn json_string(path: &Path) -> String {
+    let mut out = String::from('"');
+    for c in path.to_string_lossy().chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// One path, and whether the user named it or `-r` swept it up. Decision 4 turns on
@@ -151,7 +264,7 @@ fn step(
     opts: &keb::Options,
     mover: &mut Mover,
     claims: &mut Claims,
-    journal: &mut Journal,
+    out: &mut Out,
 ) -> io::Result<bool> {
     let path = &item.path;
 
@@ -244,14 +357,14 @@ fn step(
         }
     };
 
-    if let Err(e) = mover.rename(path, &to, journal) {
+    if let Err(e) = mover.rename(path, &to) {
         eprintln!("keb: {}: {e}", path.display());
         return Ok(false);
     }
 
     // The target, not the transformed name: a collision may have suffixed it, and the
     // line the user reads has to be the rename that actually happened.
-    println!("{} -> {}", path.display(), to.display());
+    out.rename(path, &to);
     claims.taken.insert(to);
     claims.vacated.insert(path.clone());
     Ok(true)
@@ -315,61 +428,6 @@ fn expand(inputs: &[PathBuf], cli: &Cli, partial: &mut bool) -> Vec<Item> {
 
     items.retain(|i| seen.insert(i.path.clone()));
     items
-}
-
-/// Replay the most recent run backwards (`cases.md` §8).
-fn undo(cli: &Cli, journal: &mut Journal) -> io::Result<Outcome> {
-    let entries = journal.last_run()?;
-    if entries.is_empty() {
-        eprintln!("keb: nothing to undo in {}", journal.location().display());
-        return Ok(Outcome::Clean);
-    }
-
-    let mut mover = Mover::new(true, cli.dry_run, true);
-    let mut discard = Journal::disabled();
-    let mut partial = false;
-    // Whether anything is left that a second `--undo` could still achieve. A record
-    // whose file is simply gone is spent either way; a record that failed to move is
-    // worth keeping, so the user can fix the permission and try again.
-    let mut retryable = false;
-
-    // The run renamed deepest-first, so undoing it means shallowest-first.
-    for entry in entries.iter().rev() {
-        // An uncommitted record is an interrupted two-step rename: the file is sitting
-        // under its temporary name, which is why the journal is write-ahead.
-        let from = match (entry.committed, &entry.via) {
-            (true, _) => entry.to.clone(),
-            (false, Some(via)) if rename::exists(via) => via.clone(),
-            (false, _) => continue,
-        };
-        if !rename::exists(&from) {
-            eprintln!("keb: {}: gone, cannot undo", from.display());
-            partial = true;
-            continue;
-        }
-        // Something has taken the original name back since. Undo restores names; it
-        // does not destroy whatever moved in, at any force level.
-        if rename::exists(&entry.from) && !rename::same_file(&from, &entry.from) {
-            eprintln!("keb: {}: occupied, cannot undo", entry.from.display());
-            partial = true;
-            retryable = true;
-            continue;
-        }
-
-        match mover.rename(&from, &entry.from, &mut discard) {
-            Ok(()) => println!("{} -> {}", from.display(), entry.from.display()),
-            Err(e) => {
-                eprintln!("keb: {}: {e}", from.display());
-                partial = true;
-                retryable = true;
-            }
-        }
-    }
-
-    if !cli.dry_run && !retryable {
-        journal.drop_last_run()?;
-    }
-    Ok(if partial { Outcome::Partial } else { Outcome::Clean })
 }
 
 fn options(cli: &Cli) -> io::Result<keb::Options> {

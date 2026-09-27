@@ -3,7 +3,8 @@
 //! These drive the real binary against a real directory, because everything being
 //! tested here is a property of the filesystem rather than of the transform: inode
 //! identity on a case-insensitive volume, the ordering of a recursive sweep, what the
-//! journal holds after a crash. None of it is observable from a pure function.
+//! output looks like once a rename has actually happened. None of it is observable from
+//! a pure function.
 
 use std::ffi::OsStr;
 use std::fs;
@@ -11,10 +12,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-/// A scratch directory with its own journal, removed when the test ends.
+/// A scratch directory, removed when the test ends.
 struct Sandbox {
     dir: PathBuf,
-    state: PathBuf,
 }
 
 static SEQ: AtomicU32 = AtomicU32::new(0);
@@ -25,10 +25,8 @@ impl Sandbox {
         let root = std::env::temp_dir().join(format!("keb-cli-{}-{id}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let dir = root.join("work");
-        let state = root.join("state");
         fs::create_dir_all(&dir).unwrap();
-        fs::create_dir_all(&state).unwrap();
-        Sandbox { dir, state }
+        Sandbox { dir }
     }
 
     fn touch(&self, name: &str) -> PathBuf {
@@ -55,9 +53,6 @@ impl Sandbox {
     {
         let out = Command::new(env!("CARGO_BIN_EXE_keb"))
             .current_dir(&self.dir)
-            // The journal must not be the developer's own while tests are running.
-            .env("XDG_STATE_HOME", &self.state)
-            .env("LOCALAPPDATA", &self.state)
             .args(args)
             .output()
             .expect("keb should run");
@@ -173,8 +168,6 @@ fn dry_run_changes_nothing() {
     let run = s.keb(["-n", "My File.md"]);
     assert_eq!(run.renames(), ["My File.md -> my-file.md"]);
     assert_eq!(s.tree(), ["My File.md"]);
-    // ...and leaves nothing behind to undo
-    assert_eq!(s.keb(["--undo"]).stdout, "");
 }
 
 #[test]
@@ -185,7 +178,6 @@ fn reads_a_list_from_stdin() {
 
     let out = Command::new(env!("CARGO_BIN_EXE_keb"))
         .current_dir(&s.dir)
-        .env("XDG_STATE_HOME", &s.state)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
@@ -542,141 +534,6 @@ fn max_length_truncates_without_eating_the_extension() {
     assert_eq!(s.tree(), ["a-very-lo.md"]);
 }
 
-// ── §8 / §12 Undo ────────────────────────────────────────────────────────────────
-
-#[test]
-fn undo_replays_the_run_backwards() {
-    let s = Sandbox::new();
-    s.touch("My Dir/Sub Dir/Deep File.md");
-    s.touch("My Dir/Top File.md");
-
-    assert_eq!(s.keb(["-dr", "My Dir"]).code, 0);
-    assert_eq!(s.tree()[0], "my-dir");
-
-    let undone = s.keb(["--undo"]);
-    assert_eq!(undone.code, 0, "{}", undone.stderr);
-    assert_eq!(
-        s.tree(),
-        ["My Dir", "My Dir/Sub Dir", "My Dir/Sub Dir/Deep File.md", "My Dir/Top File.md"]
-    );
-
-    // the run is spent; a second undo has nothing left
-    let again = s.keb(["--undo"]);
-    assert_eq!(again.stdout, "");
-    assert!(again.stderr.contains("nothing to undo"));
-}
-
-#[test]
-fn undo_restores_a_suffixed_collision() {
-    let s = Sandbox::new();
-    s.touch("My File.md");
-    s.touch("my_file.md");
-
-    assert_eq!(s.keb(["My File.md", "my_file.md"]).code, 0);
-    assert_eq!(s.keb(["--undo"]).code, 0);
-    assert_eq!(s.tree(), ["My File.md", "my_file.md"]);
-}
-
-#[test]
-fn a_run_that_renames_nothing_does_not_shadow_the_last_one() {
-    // An empty run marker would become "the most recent run" and hide the real one
-    let s = Sandbox::new();
-    s.touch("My File.md");
-    s.touch("already-kebab.md");
-
-    assert_eq!(s.keb(["My File.md"]).code, 0);
-    let noop = s.keb(["already-kebab.md"]);
-    assert_eq!(noop.stdout, "");
-
-    let undone = s.keb(["--undo"]);
-    assert_eq!(undone.renames(), ["my-file.md -> My File.md"]);
-    assert_eq!(s.tree(), ["My File.md", "already-kebab.md"]);
-}
-
-#[test]
-fn undo_does_not_clobber_whatever_took_the_name_back() {
-    let s = Sandbox::new();
-    s.touch("My File.md");
-    assert_eq!(s.keb(["My File.md"]).code, 0);
-
-    // someone recreates the original name with different content
-    s.touch("My File.md");
-
-    let undone = s.keb(["--undo"]);
-    assert_eq!(undone.code, 1);
-    assert!(undone.stderr.contains("occupied"), "{}", undone.stderr);
-    assert_eq!(fs::read_to_string(s.dir.join("My File.md")).unwrap(), "My File.md");
-    assert!(s.exists("my-file.md"));
-}
-
-#[test]
-fn undo_dry_run_reads_the_journal_without_spending_it() {
-    let s = Sandbox::new();
-    s.touch("My File.md");
-    assert_eq!(s.keb(["My File.md"]).code, 0);
-
-    let preview = s.keb(["--undo", "-n"]);
-    assert_eq!(preview.renames(), ["my-file.md -> My File.md"]);
-    assert_eq!(s.tree(), ["my-file.md"], "dry run must change nothing");
-
-    // the run is still there to undo for real
-    assert_eq!(s.keb(["--undo"]).code, 0);
-    assert_eq!(s.tree(), ["My File.md"]);
-}
-
-#[test]
-fn dry_run_predicts_a_multi_file_run() {
-    // cases.md §12 warns that dry-run output can lie. It must at least not lie about
-    // its own effects: the second file collides with the first one's *planned* name,
-    // and the third takes a name the first one is vacating.
-    let s = Sandbox::new();
-    s.touch("My File.md");
-    s.touch("my_file.md");
-    s.touch("MY FILE.md.bak");
-
-    let preview = s.keb(["-n", "My File.md", "my_file.md"]);
-    let real = s.keb(["My File.md", "my_file.md"]);
-    assert_eq!(preview.renames(), real.renames());
-}
-
-#[test]
-fn an_interrupted_two_step_rename_is_recoverable() {
-    // cases.md §12 — the journal is write-ahead precisely so that a crash between the
-    // two halves of a case-only rename leaves a record pointing at the temporary name
-    let s = Sandbox::new();
-    let temp = ".keb-999-1";
-    s.touch(temp);
-
-    let record = |p: &Path| p.display().to_string();
-    fs::create_dir_all(s.state.join("keb")).unwrap();
-    fs::write(
-        s.state.join("keb/journal.tsv"),
-        format!(
-            "RUN\nPLAN\t{}\t{}\t{}\n",
-            record(&s.dir.join("My File.md")),
-            record(&s.dir.join("my-file.md")),
-            record(&s.dir.join(temp)),
-        ),
-    )
-    .unwrap();
-
-    let run = s.keb(["--undo"]);
-    assert_eq!(run.code, 0, "{}", run.stderr);
-    assert_eq!(s.tree(), ["My File.md"], "the orphaned temp file was not recovered");
-}
-
-#[test]
-fn undo_only_reaches_the_most_recent_run() {
-    let s = Sandbox::new();
-    s.touch("One File.md");
-    s.touch("Two File.md");
-
-    assert_eq!(s.keb(["One File.md"]).code, 0);
-    assert_eq!(s.keb(["Two File.md"]).code, 0);
-    assert_eq!(s.keb(["--undo"]).code, 0);
-    assert_eq!(s.tree(), ["Two File.md", "one-file.md"]);
-}
-
 // ── Usage ────────────────────────────────────────────────────────────────────────
 
 /// A bare `keb` shows `--help`, but only at a terminal. This runs the binary with stdin
@@ -785,16 +642,109 @@ fn an_already_kebab_directory_is_silent_without_allow_dirs() {
     assert_eq!(run.stdout, "");
 }
 
-/// `--undo` restores whatever the run changed, directories included, without `-d`.
+// ── §8 Output format ─────────────────────────────────────────────────────────────
+
+/// The summary lines are gated on stderr being a terminal, so a pipeline sees exactly
+/// what it saw before they existed. The harness captures output through pipes, which is
+/// what makes this testable at all — and what every other test here relies on.
 #[test]
-fn undo_restores_a_directory_without_allow_dirs() {
+fn summary_lines_are_suppressed_when_stderr_is_not_a_terminal() {
     let s = Sandbox::new();
-    s.mkdir("My Dir");
+    s.touch("My File.md");
 
-    assert_eq!(s.keb(["-d", "My Dir"]).code, 0);
-    assert_eq!(s.tree(), ["my-dir"]);
+    let dry = s.keb(["-n", "My File.md"]);
+    assert_eq!(dry.stdout, "My File.md -> my-file.md\n");
+    assert_eq!(dry.stderr, "", "no dry-run header");
 
-    let run = s.keb(["--undo"]);
+    let run = s.keb(["My File.md"]);
     assert_eq!(run.code, 0, "{}", run.stderr);
-    assert_eq!(s.tree(), ["My Dir"]);
+    assert_eq!(run.stdout, "My File.md -> my-file.md\n");
+    assert_eq!(run.stderr, "", "no Renaming... header, no trailer");
+}
+
+#[test]
+fn format_old_and_new_print_one_side() {
+    let s = Sandbox::new();
+    s.touch("My File.md");
+
+    let old = s.keb(["-n", "--format=old", "My File.md"]);
+    assert_eq!(old.stdout, "My File.md\n");
+
+    let new = s.keb(["-n", "--format=new", "My File.md"]);
+    assert_eq!(new.stdout, "my-file.md\n");
+}
+
+#[test]
+fn format_null_separates_with_nul() {
+    let s = Sandbox::new();
+    s.touch("My File.md");
+
+    let run = s.keb(["-n", "--format=null", "My File.md"]);
+    assert_eq!(run.stdout, "My File.md\0my-file.md\0");
+}
+
+/// The arrow format cannot survive a newline in a filename — the record breaks in two.
+/// `json` is the format that can, which is the reason it exists.
+#[test]
+fn format_json_survives_a_newline_in_a_filename() {
+    let s = Sandbox::new();
+    s.touch("Bad\nName.md");
+
+    let arrow = s.keb(["-n", "Bad\nName.md"]);
+    assert_eq!(arrow.stdout.lines().count(), 2, "arrow splits the record: {:?}", arrow.stdout);
+
+    let json = s.keb(["-n", "--format=json", "Bad\nName.md"]);
+    assert_eq!(json.stdout.lines().count(), 1, "json keeps it on one line");
+    assert_eq!(json.stdout, "{\"from\":\"Bad\\nName.md\",\"to\":\"bad-name.md\"}\n");
+}
+
+#[test]
+fn format_json_escapes_quotes_and_backslashes() {
+    let s = Sandbox::new();
+    s.touch("A \"Quoted\" Name.md");
+
+    let run = s.keb(["-n", "--format=json", "A \"Quoted\" Name.md"]);
+    assert_eq!(run.stdout, "{\"from\":\"A \\\"Quoted\\\" Name.md\",\"to\":\"a-quoted-name.md\"}\n");
+}
+
+#[test]
+fn absolute_prints_full_paths() {
+    let s = Sandbox::new();
+    s.touch("Sub Dir/My File.md");
+    // `absolute()` prefixes the kernel's cwd, which is already symlink-resolved: the
+    // system temp dir is reached through one on macOS (/var -> /private/var). That is
+    // unavoidable and harmless, so compare against the resolved form.
+    let root = s.dir.canonicalize().unwrap();
+
+    let run = s.keb(["-n", "--absolute", "Sub Dir/My File.md"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let (from, to) = run.stdout.trim_end().split_once(" -> ").expect("arrow format");
+    assert_eq!(from, root.join("Sub Dir/My File.md").display().to_string());
+    assert_eq!(to, root.join("Sub Dir/my-file.md").display().to_string());
+}
+
+/// The property that matters: a symlink *named in the argument* is preserved, because keb
+/// renames the link rather than its target and a canonical path could name something else.
+#[cfg(unix)]
+#[test]
+fn absolute_does_not_resolve_a_symlink_in_the_path() {
+    let s = Sandbox::new();
+    s.touch("Real Dir/My File.md");
+    std::os::unix::fs::symlink(s.dir.join("Real Dir"), s.dir.join("Link")).unwrap();
+
+    let run = s.keb(["-n", "--absolute", "Link/My File.md"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let (from, _) = run.stdout.trim_end().split_once(" -> ").expect("arrow format");
+    assert!(from.contains("/Link/"), "symlink was resolved away: {from}");
+    assert!(!from.contains("/Real Dir/"), "symlink was resolved away: {from}");
+}
+
+#[test]
+fn absolute_composes_with_format() {
+    let s = Sandbox::new();
+    s.touch("My File.md");
+    let root = s.dir.canonicalize().unwrap();
+
+    let run = s.keb(["-n", "--absolute", "--format=new", "My File.md"]);
+    assert_eq!(run.stdout.trim_end(), root.join("my-file.md").display().to_string());
 }

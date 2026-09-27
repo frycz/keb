@@ -5,8 +5,6 @@
 //! - **Case-only renames.** On a case-insensitive filesystem `File.md` and `file.md`
 //!   are the same file, so `exists()` reports a collision that is not one. The tool
 //!   compares inodes, not names, and goes through a temporary name when they match.
-//! - **The journal.** The intent reaches disk before the syscall, so an interrupted
-//!   two-step rename can be finished or reversed (§12, "Atomicity").
 //! - **`git mv`.** Decision 10: inside a repository, a tracked file is moved with
 //!   `git mv`, which preserves staged state and rename detection. It is run as an
 //!   argv array with `--`, never a shell string, so a file named `$(rm -rf ~)` is
@@ -18,8 +16,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::journal::Journal;
-
 pub struct Mover {
     git: Git,
     /// Overwrite an existing target, and rename protected names under `-r`.
@@ -30,29 +26,37 @@ pub struct Mover {
     /// rather than chosen.
     pub allow_dirs: bool,
     counter: u32,
+    /// Renames performed, or planned under `-n`. The run summary reports it.
+    renamed: usize,
 }
 
 impl Mover {
     pub fn new(force: bool, dry_run: bool, allow_dirs: bool) -> Mover {
-        Mover { git: Git::default(), force, dry_run, allow_dirs, counter: 0 }
+        Mover { git: Git::default(), force, dry_run, allow_dirs, counter: 0, renamed: 0 }
     }
 
-    /// Rename `from` to `to`, journalling first.
-    pub fn rename(&mut self, from: &Path, to: &Path, journal: &mut Journal) -> io::Result<()> {
+    /// How many renames have gone through, counting the ones `-n` only planned.
+    pub fn renamed(&self) -> usize {
+        self.renamed
+    }
+
+    /// Rename `from` to `to`.
+    pub fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
         // A target that is the same file as the source is a case-only rename, and the
         // one case `fs::rename` cannot do in a single step on a case-insensitive
         // filesystem.
         let two_step = exists(to) && same_file(from, to);
         let via = two_step.then(|| self.temp_name(to)).flatten();
 
+        // Counted before the early return so that `-n` reports the same number the real
+        // run would, which is the whole point of a dry run.
+        self.renamed += 1;
+
         if self.dry_run {
             return Ok(());
         }
 
-        journal.plan(from, to, via.as_deref())?;
-
         if self.git.try_mv(from, to, self.force || two_step) {
-            journal.commit(from, to)?;
             return Ok(());
         }
 
@@ -64,7 +68,7 @@ impl Mover {
             None => std::fs::rename(from, to)?,
         }
 
-        journal.commit(from, to)
+        Ok(())
     }
 
     /// An unused name in the target's own directory, so the intermediate step of a

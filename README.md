@@ -44,11 +44,21 @@ keb [OPTIONS] <PATHS>...
   -r, --recursive     Recurse into directories
   -d, --allow-dirs    Permit renaming directories. Without it, only files are renamed
   -f, --force         Overwrite on collision, and rename protected names under -r
-      --undo          Undo the most recent run
   -0, --null          Paths on stdin are null-separated, for `find -print0`
+      --format        How to print each rename: arrow, old, new, json, null
+      --absolute      Print absolute paths
       --separator     Emit this character between words instead of `-`
       --ascii         Narrow the output to ASCII
       --max-length    Override the 255 byte / UTF-16 unit name limit
+```
+
+**Renames cannot be undone.** `-n` prints the plan and changes nothing, and it is the safety mechanism — get in the habit of running it first on anything you have not renamed before:
+
+```console
+$ keb -n *
+My File.md -> my-file.md
+Report (Final) [v2].md -> report-final-v2.md
+keb: dry run, nothing changed (2 renames planned)
 ```
 
 ## Examples
@@ -78,28 +88,22 @@ $ keb "notes/My Meeting Notes.md"
 notes/My Meeting Notes.md -> notes/my-meeting-notes.md
 ```
 
-### Look before you leap: `-n`
+### Did it happen: the summary line
 
-`-n` prints exactly what would happen and changes nothing.
+A dry run says so up front; a real run says what it did at the end. Both go to stderr, so `2>/dev/null` silences them and a pipeline never sees them at all.
 
 ```console
 $ keb -n *
+keb: dry run, nothing changed (2 renames planned)
 My File.md -> my-file.md
 Report (Final) [v2].md -> report-final-v2.md
-```
 
-### Changed your mind: `--undo`
-
-`--undo` replays the most recent run backwards.
-
-```console
-$ keb "My File.md"
+$ keb *
+keb: Renaming...
 My File.md -> my-file.md
-$ keb --undo
-my-file.md -> My File.md
+Report (Final) [v2].md -> report-final-v2.md
+keb: 2 files renamed
 ```
-
-Every run is journalled *before* it happens, not after, so even an interrupted rename can be unwound. The journal lives in `$XDG_STATE_HOME/keb/journal.tsv` (`%LOCALAPPDATA%\keb\journal.tsv` on Windows) and keeps the last 20 runs. Undo restores names; it never destroys whatever has taken a name back since.
 
 ### Whole trees: `-r`
 
@@ -202,11 +206,50 @@ Quarterly Report On Widget Sales.pdf -> quarterly-report.pdf
 
 Reach for it when the destination is tighter than your filesystem — eCryptfs caps names at 143, ISO/Joliet at 64, and Windows budgets 260 characters for the whole path.
 
+### Machine-readable output: `--format`, `--absolute`
+
+`--format` changes what each rename looks like on stdout. `--absolute` prints full paths, and composes with any format.
+
+```console
+$ keb -n --format=new *              # just the new names
+fourth-file.md
+
+$ keb -n --format=old *              # just what was touched
+Fourth File.md
+
+$ keb -n --format=json *
+{"from":"Fourth File.md","to":"fourth-file.md"}
+
+$ keb -n --format=null * | xargs -0  # old\0new\0 pairs
+```
+
+Use `json` or `null` if anything downstream parses the output. A filename may legally contain a newline or a literal ` -> `, either of which makes the default `arrow` format ambiguous to split — the same hole `-0` closes on the input side:
+
+```console
+$ keb -n "Bad<newline>Name.md"       # arrow: one rename, two lines
+Bad
+Name.md -> bad-name.md
+
+$ keb -n --format=json "Bad<newline>Name.md"
+{"from":"Bad\nName.md","to":"bad-name.md"}
+```
+
+`--absolute` is lexical — it prefixes the working directory and does **not** resolve symlinks, because keb renames the link and not its target:
+
+```console
+$ keb -n --absolute --format=json "Fourth File.md"
+{"from":"/home/you/photos/Fourth File.md","to":"/home/you/photos/fourth-file.md"}
+```
+
 ## Output and exit codes
 
-Renames print to **stdout** as `old -> new`, one per line. Warnings and errors go to **stderr**. So `keb x >/dev/null` is a quiet mode and `keb x 2>/dev/null` silences warnings, without either needing a flag.
+Renames print to **stdout**, one record per rename. Warnings, errors and the summary line go to **stderr**. So `keb x >/dev/null` is a quiet mode and `keb x 2>/dev/null` silences everything else, without either needing a flag.
+
+The summary line appears only when stderr is a terminal, so a pipeline's output is unchanged by it.
 
 Exit codes: `0` all good, `1` partial, `2` error. A single failed rename does not abort the run.
+
+There is no undo. `-n` first.
 
 ## Composition
 
