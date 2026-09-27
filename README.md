@@ -7,6 +7,14 @@ $ keb "My File.md"
 My File.md -> my-file.md
 ```
 
+Or anything that lists paths:
+
+```console
+$ find . -name '*.md' | keb
+./docs/Getting Started.md -> ./docs/getting-started.md
+./README Draft.md -> ./readme-draft.md
+```
+
 ## Install
 
 ```sh
