@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-27
+
 ### Added
 
 - `--format=arrow|old|new|json|null`, choosing what each rename looks like on
@@ -89,4 +91,5 @@ refused, with `renaming is not implemented yet (stub build)`.
 - Names are truncated on grapheme boundaries.
 - Invalid-UTF-8 names are renamed anyway, with every dropped byte reported.
 
+[0.2.0]: https://github.com/frycz/keb/releases/tag/v0.2.0
 [0.1.0]: https://github.com/frycz/keb/releases/tag/v0.1.0
