@@ -552,7 +552,39 @@ fn no_paths_without_a_terminal_is_an_error_not_help() {
     assert!(run.stderr.contains("no paths given"), "got: {}", run.stderr);
     assert!(!run.stderr.contains("Usage:"), "help does not belong in a script's stderr");
     assert!(run.stdout.is_empty(), "nothing was renamed, so stdout stays empty");
+    // The one-liner has to be recoverable without a second guess.
+    assert!(run.stderr.contains("--help"), "got: {}", run.stderr);
     assert_eq!(s.tree(), ["My File.md"]);
+}
+
+/// `-h` carries the examples and the no-undo warning, not just `--help`: a bare `keb` at
+/// a prompt prints the help, and that is the only place someone who has not read the
+/// README learns to run `-n` first.
+#[test]
+fn short_help_carries_the_examples_and_the_warning() {
+    let s = Sandbox::new();
+
+    let run = s.keb(["-h"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    for expected in ["Examples:", "keb -n *", "find . -name '*.md' | keb", "cannot be undone"] {
+        assert!(run.stdout.contains(expected), "{expected:?} missing from: {}", run.stdout);
+    }
+}
+
+/// The protect list is the tool's most surprising behaviour, so the binary can print it
+/// rather than only the README describing it. It is requested output, so it goes to
+/// stdout — `keb --list-protected | grep Makefile` is the point — and nothing is renamed.
+#[test]
+fn list_protected_prints_the_list_and_renames_nothing() {
+    let s = Sandbox::new();
+    s.touch("My File.md");
+
+    let run = s.keb(["--list-protected"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    for expected in ["Makefile", "[*", "*.xcodeproj", "*.java", "COM1-COM9"] {
+        assert!(run.stdout.contains(expected), "{expected:?} missing from: {}", run.stdout);
+    }
+    assert_eq!(s.tree(), ["My File.md"], "listing renames nothing");
 }
 
 // ── Input ordering ───────────────────────────────────────────────────────────────

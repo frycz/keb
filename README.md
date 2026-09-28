@@ -40,16 +40,17 @@ Prebuilt binaries for macOS (Apple Silicon and Intel), Linux (x64 and ARM64) and
 ```
 keb [OPTIONS] <PATHS>...
 
-  -n, --dry-run       Print the plan, change nothing
-  -r, --recursive     Recurse into directories
-  -d, --allow-dirs    Permit renaming directories. Without it, only files are renamed
-  -f, --force         Overwrite on collision, and rename protected names under -r
-  -0, --null          Paths on stdin are null-separated, for `find -print0`
-      --format        How to print each rename: arrow, old, new, json, null
-      --absolute      Print absolute paths
-      --separator     Emit this character between words instead of `-`
-      --ascii         Narrow the output to ASCII
-      --max-length    Override the 255 byte / UTF-16 unit name limit
+  -n, --dry-run         Print the plan, change nothing
+  -r, --recursive       Recurse into directories
+  -d, --allow-dirs      Permit renaming directories. Without it, only files are renamed
+  -f, --force           Overwrite on collision, and rename protected names under -r
+  -0, --null            Paths on stdin are null-separated, for `find -print0`
+      --format          How to print each rename: arrow, old, new, json, null
+      --absolute        Print absolute paths
+      --separator       Emit this character between words instead of `-`
+      --ascii           Narrow the output to ASCII
+      --max-length      Override the 255 byte / UTF-16 unit name limit
+      --list-protected  List the names keb never renames, and why
 ```
 
 **Renames cannot be undone.** `-n` prints the plan and changes nothing, and it is the safety mechanism — get in the habit of running it first on anything you have not renamed before:
@@ -296,7 +297,7 @@ Three rules do most of the work:
 
 ## What it refuses to do
 
-A name whose *correct* kebab form breaks something is protected. That is the whole list, in four groups:
+A name whose *correct* kebab form breaks something is protected. That is the whole list, in four groups — and `keb --list-protected` prints it, so you never need this page to find out why something was skipped:
 
 **Names a build tool looks up literally.** `Makefile`, `GNUmakefile`, `CMakeLists.txt`, `Dockerfile`, `Containerfile`, `Gemfile`, `Rakefile`, `Brewfile`, `Procfile`, `Vagrantfile`, `Jenkinsfile`, `Justfile`, `Caddyfile`, `LICENSE`, `LICENCE`, `COPYING`, `NOTICE`, `CODEOWNERS`, `Info.plist`, `AndroidManifest.xml`.
 

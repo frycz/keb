@@ -93,6 +93,54 @@ pub fn reason(name: &str) -> Option<&'static str> {
     None
 }
 
+/// The whole list, as `--list-protected` prints it.
+///
+/// Built from the same constants `reason` matches on, so the two cannot drift apart.
+/// Only the four one-offs are written out by hand, because each is a rule rather than a
+/// list — and each is named in the same words `reason` uses, so a skip message and this
+/// list read alike.
+pub fn list() -> String {
+    use std::fmt::Write;
+
+    let mut out = String::from(
+        "keb leaves these names alone: their correct kebab form would break something.\n\
+         One you name yourself is renamed with a warning, because you picked it; one `-r`\n\
+         finds is skipped, because you did not. `-f` renames either.\n",
+    );
+
+    out.push_str("\nNames a build tool looks up literally:\n");
+    for name in EXACT {
+        let _ = writeln!(out, "  {name}");
+    }
+
+    out.push_str("\nSyntax rather than a name, matched by prefix:\n");
+    for (prefix, why) in PREFIXES {
+        let _ = writeln!(out, "  {:<10} {why}", format!("{prefix}*"));
+    }
+
+    out.push_str("\nBundle directories, matched by extension, in any case:\n");
+    for bundle in BUNDLES {
+        let _ = writeln!(out, "  *{bundle}");
+    }
+
+    out.push_str("\nFour one-offs:\n");
+    let ones = [
+        ("*.java", "a Java source file, whose name must match its public class"),
+        ("*.icloud", "an iCloud placeholder, for a file not downloaded yet"),
+        ("Icon\\r", "the macOS custom-icon file"),
+        ("CON, PRN, AUX, NUL, COM1-COM9, LPT1-LPT9", "a Windows reserved device name"),
+    ];
+    for (pattern, why) in ones {
+        let _ = writeln!(out, "  {pattern}\n      {why}");
+    }
+
+    out.push_str(
+        "\nA name that transforms to nothing — `🚀.md`, `___.md` — is skipped too, rather\n\
+         than turned into `untitled.md`.\n",
+    );
+    out
+}
+
 /// `CON`, `PRN`, `NUL`, `COM1`, `LPT1` and friends are device names on Windows, with
 /// or without an extension, in any case (§7).
 fn is_reserved(name: &str) -> bool {

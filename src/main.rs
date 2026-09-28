@@ -21,12 +21,28 @@ use clap::{CommandFactory, Parser};
 
 use rename::{Claims, Mover, Target};
 
+/// Shown under both `-h` and `--help`, because a bare `keb` at a prompt prints the help
+/// and this is the only place the one rule that matters — `-n` first, there is no undo —
+/// reaches someone who has not read the README.
+const EXAMPLES: &str = "\
+Examples:
+  keb -n *                    Print the plan, change nothing
+  keb *                       Rename every file here
+  keb -r docs                 Whole tree, filenames only
+  keb -dr Photos              ...directory names too
+  keb --separator=_ *         Snake case instead
+  find . -name '*.md' | keb   Anything that lists paths
+  keb -n --format=json *      One JSON record per rename, safe to parse
+
+Renames cannot be undone. Run -n first on anything you have not renamed before.
+Some names are never renamed; --list-protected says which, and why.";
+
 /// Rename files to kebab case, safely and idempotently.
 ///
 /// Only the basename changes; parent directories are never touched. With no paths,
 /// reads a list from stdin, so `find . -name '*.md' | keb` works.
 #[derive(Parser)]
-#[command(name = "keb", version, about, long_about = None)]
+#[command(name = "keb", version, about, long_about = None, after_help = EXAMPLES)]
 struct Cli {
     /// Paths to rename. `-` reads a list from stdin.
     paths: Vec<PathBuf>,
@@ -63,13 +79,17 @@ struct Cli {
     #[arg(long, value_name = "N")]
     max_length: Option<usize>,
 
-    /// How to print each rename.
+    /// How to print each rename; `json` and `null` are the parse-safe ones.
     #[arg(long, value_name = "FMT", default_value = "arrow")]
     format: Format,
 
     /// Print absolute paths. Lexical only — symlinks are not resolved.
     #[arg(long)]
     absolute: bool,
+
+    /// List the names keb never renames, and why. Renames nothing.
+    #[arg(long)]
+    list_protected: bool,
 }
 
 /// One record per rename on stdout. `arrow` is for reading; `json` and `null` are the
@@ -111,6 +131,13 @@ enum Outcome {
 }
 
 fn run(cli: &Cli) -> io::Result<Outcome> {
+    // Asked for, so it goes to stdout and the run ends there — the list is the output,
+    // not a note about it, and `keb --list-protected | grep Makefile` should work.
+    if cli.list_protected {
+        print!("{}", protect::list());
+        return Ok(Outcome::Clean);
+    }
+
     // A bare `keb` typed at a prompt is someone who has not read `--help` yet, and a
     // one-line complaint is a poor place to learn that `-n` and `--format` exist. Show the
     // help instead. This cannot be clap's `arg_required_else_help`, which fires during
@@ -128,7 +155,9 @@ fn run(cli: &Cli) -> io::Result<Outcome> {
         // Only a non-interactive run reaches this: a pipeline that produced an empty
         // list. That is a real error rather than a question of usage, so it stays a
         // one-line diagnostic — help text in a script's stderr is noise.
-        return Err(io::Error::other("no paths given; pass paths as arguments or on stdin"));
+        return Err(io::Error::other(
+            "no paths given; pass paths as arguments or on stdin (try --help)",
+        ));
     }
 
     let mut mover = Mover::new(cli.force, cli.dry_run, cli.allow_dirs);
