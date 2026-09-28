@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-28
+
+### Added
+
+- `--list-protected`, printing the names keb never renames and why, then exiting
+  without renaming anything. The protect list is the tool's most surprising
+  behaviour, and finding out why a file was skipped should not require the
+  README. It goes to stdout, so `keb --list-protected | grep Makefile` works, and
+  it is built from the same constants `protect::reason` matches on, so the list
+  and the skip messages cannot drift apart.
+- Examples under `-h` as well as `--help`, including the rule that matters: there
+  is no undo, run `-n` first. A bare `keb` at a prompt prints the help, so this is
+  the one place it reaches someone who has not read the README.
+
+### Changed
+
+- `no paths given` now ends with `(try --help)`. The one-liner is what a pipeline
+  with an empty list gets, and it has to be recoverable without a second guess.
+
 ## [0.2.0] — 2026-09-27
 
 ### Added
@@ -91,5 +110,6 @@ refused, with `renaming is not implemented yet (stub build)`.
 - Names are truncated on grapheme boundaries.
 - Invalid-UTF-8 names are renamed anyway, with every dropped byte reported.
 
+[0.3.0]: https://github.com/frycz/keb/releases/tag/v0.3.0
 [0.2.0]: https://github.com/frycz/keb/releases/tag/v0.2.0
 [0.1.0]: https://github.com/frycz/keb/releases/tag/v0.1.0
