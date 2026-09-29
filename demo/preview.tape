@@ -10,7 +10,7 @@
 Output playground/preview.gif
 
 Set Shell "bash"
-Set FontSize 23
+Set FontSize 19
 Set Width 1280
 Set Height 640
 Set Padding 40
@@ -24,6 +24,8 @@ Type "sh demo/setup.sh && cd playground/demo && clear" Enter
 Sleep 500ms
 Type "# keb: rename files to kebab case, safely" Enter
 Type "keb *" Enter
+Sleep 2s
+Type "ls -1" Enter
 Sleep 1s
 Show
 

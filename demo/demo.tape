@@ -1,4 +1,4 @@
-# Records demo/keb.gif — the README hero.
+# Records demo/keb.gif — the README hero: list, rename, list of WhatsApp exports.
 #
 #   cargo build --release && vhs demo/demo.tape
 #
@@ -9,8 +9,8 @@ Output demo/keb.gif
 
 Set Shell "bash"
 Set FontSize 20
-Set Width 1140
-Set Height 580
+Set Width 1360
+Set Height 520
 Set Padding 28
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 55ms
@@ -23,13 +23,13 @@ Show
 
 Sleep 800ms
 Type "ls -1" Sleep 400ms Enter
-Sleep 2.5s
-
-Type "keb -n *" Sleep 600ms Enter
-Sleep 4s
-
-Ctrl+L
-Type "keb *" Sleep 400ms Enter
 Sleep 1.5s
+Type "# spaces. parentheses. timestamps. why. 😤" Sleep 400ms Enter
+Sleep 1.5s
+
+Type "keb *" Sleep 400ms Enter
+Sleep 2s
 Type "ls -1" Sleep 400ms Enter
-Sleep 4s
+Sleep 1.5s
+Type "# ahh. much better. 😌" Sleep 400ms Enter
+Sleep 3s

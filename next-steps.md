@@ -27,7 +27,7 @@ The plan for taking keb from "published" to "available everywhere, and known". W
   - The man page embeds the version → regenerate after every bump (added to `publish.md` step 1).
   - dist `include = ["completions/", "man/"]` — verified in a local `dist build` archive. `release.yml` unchanged.
   - `.gitattributes` forces LF on generated files so Windows CI doesn't fail the byte comparison.
-- [x] **Demo GIF.** `demo/setup.sh` recreates `playground/demo`; `demo/demo.tape` records `demo/keb.gif` (15 s, ~257 KB). Re-record: `cargo build --release && vhs demo/demo.tape`.
+- [x] **Demo GIF.** `demo/setup.sh` recreates `playground/demo` with three WhatsApp exports; `demo/demo.tape` records `demo/keb.gif` (list, `keb *`, list, with a reaction comment after each list; 16 s, ~164 KB). Re-record: `cargo build --release && vhs demo/demo.tape`.
 - [x] **README hero.** New tagline, GIF (absolute `raw.githubusercontent.com` URL so it renders on crates.io and npm — appears once pushed to `main`), and a "Why not `rename` or `mmv`?" section; every claim verified in the playground.
 - [x] `demo/` and `next-steps.md` excluded from the crate.
 
@@ -45,7 +45,7 @@ The plan for taking keb from "published" to "available everywhere, and known". W
   - Metadata is in `[package.metadata.deb]` / `[package.metadata.generate-rpm]`. The deb maintainer is `Adam Sawicki <frycz.dev@gmail.com>`.
   - Verified locally: built in `rust:1-bullseye` containers with dist's profile, then installed in `debian:bookworm` and `fedora:latest`. Checked `keb --version`, `man keb` (all sections, C locale), bash completion loading, file layout, auto-detected glibc dependency (`libc6 (>= 2.30)` / `GLIBC_2.30`), and clean removal. **The CI job itself is only proven on the next tag.**
 - [x] **cargo-binstall.** Works with no metadata. `cargo binstall keb@0.3.0 --disable-strategies quick-install,compile` installs from dist's GitHub assets (tested in a container).
-- [x] **Social preview image.** `demo/preview.tape` → `demo/preview.png` (1280×640, one frame of `keb *`, before → after on every line). Re-record: `cargo build --release && vhs demo/preview.tape`.
+- [x] **Social preview image.** `demo/preview.tape` → `demo/preview.png` (1280×640, one frame of `keb *` then `ls -1` on the same WhatsApp files). Re-record: `cargo build --release && vhs demo/preview.tape`.
 - [x] **Repo metadata command**, in "Owner, after batch 2" below.
 - [x] `CHANGELOG.md` `[Unreleased]` and `publish.md` (job order, verify step, recovery row, new "Linux packages" section with by-hand container checks) updated.
 
@@ -68,16 +68,81 @@ The plan for taking keb from "published" to "available everywhere, and known". W
 
 ## Batch 3 — package manifests (agent, after 0.4.0 is released)
 
-Needs the 0.4.0 release asset URLs and sha256 sums (from the Release's `.sha256` files).
+### State when batch 2 ended (2026-09-29)
 
-- [ ] **AUR:** two PKGBUILDs + `.SRCINFO` — `keb` (builds from the crate source) and `keb-bin` (prebuilt tarballs, x86_64 + aarch64). Install man page, completions and license. Verify with `makepkg` + `namcap` in an `archlinux` container.
-- [ ] **nixpkgs:** `pkgs/by-name/ke/keb/package.nix` using `rustPlatform.buildRustPackage`, `installShellFiles` for man + completions, `meta.license = lib.licenses.mit`, `meta.mainProgram = "keb"`. Verify with `nix-build` (local Nix or a `nixos/nix` container). Note: `tests/cli.rs` needs a writable temp dir; set `checkFlags`/`doCheck` if the sandbox breaks it.
-- [ ] **winget:** manifest set (version, installer, locale) for the Windows x64 zip, via `wingetcreate new` or hand-written; validate with `winget validate` if available.
-- [ ] **Scoop:** create `frycz/scoop-bucket` content — `keb.json` with `checkver` + `autoupdate` so future versions update themselves.
-- [ ] **aqua registry:** `pkgs/frycz/keb/registry.yaml` (github_release type, asset template per OS/arch). Makes `mise use aqua:frycz/keb` work.
-- [ ] Write `packaging.md`: per channel — what was prepared, where it lives, exact submission steps, and how to bump it on the next release.
+- **0.4.0 is released.** Published on crates.io, tagged `v0.4.0`, and the Release exists. The Release CI results: every build, `host`, Homebrew and both `custom-linux-packages` jobs succeeded. `publish-npm` failed as expected (the npm gap in `publish.md`), so `announce` was skipped.
+- **Not confirmed done by the owner yet.** Ask before assuming, and don't block on them:
+  - `npm publish` by hand.
+  - Upload the social preview.
+  - Run the `gh repo edit` command.
+- **`ci.yml` is red on Windows. Fix this before batch 3.** It is pre-existing, not from batch 2.
+  - Clippy used to fail first, on an `OsStr` import only the Unix code used; that is fixed in `6da4d71`. With clippy passing, 13 tests in `tests/cli.rs` now fail on `windows-latest` (run 36573886405). macOS and Ubuntu are green.
+  - Two causes, both path separators:
+    1. **Test-only:** the sandbox's `tree()` helper lists paths with `\`, while the tests expect `/`. Example: `["my-dir", "my-dir\\My File.md"]` vs `["my-dir", "my-dir/My File.md"]`.
+    2. **Real Windows output quirk:** keb builds the new path with `parent.join(new)`, so the output mixes separators: `./A Dir/My File.md -> ./A Dir\my-file.md`. Decide whether to keep the parent exactly as the user typed it and append the separator they used, or to accept native separators and normalise in the tests. The first is more consistent with "only the basename changes", and the `--absolute` and `json` outputs are affected the same way.
+  - Agents can't run `tests/cli.rs` locally (rules above). Iterate via CI on a branch the owner pushes, or reason from the failures in the log (`gh run view <id> --log-failed`).
+- **The `.deb`/`.rpm` job is now proven in CI.**
 
-**Done when:** every manifest builds/validates locally where tooling allows, and `packaging.md` lists the owner's submission steps.
+### Facts about the 0.4.0 Release (checked, don't re-derive)
+
+- **Base URL:** `https://github.com/frycz/keb/releases/download/v0.4.0/`
+- **Binary archives:**
+  - `keb-x86_64-unknown-linux-gnu.tar.xz`
+  - `keb-aarch64-unknown-linux-gnu.tar.xz`
+  - `keb-x86_64-apple-darwin.tar.xz`
+  - `keb-aarch64-apple-darwin.tar.xz`
+  - `keb-x86_64-pc-windows-msvc.zip`
+- **Linux packages:**
+  - `keb_0.4.0-1_amd64.deb`
+  - `keb_0.4.0-1_arm64.deb`
+  - `keb-0.4.0-1.x86_64.rpm`
+  - `keb-0.4.0-1.aarch64.rpm`
+- **Other assets:**
+  - `source.tar.gz`, dist's git archive of the tag
+  - `sha256.sum`, all sums in one file
+  - `keb-installer.sh`, `keb-installer.ps1`, `keb-npm-package.tar.gz`, `keb.rb`, `dist-manifest.json`
+- **Checksums:** every archive and package has a `<asset>.sha256` next to it. The format is `<hex> *<filename>`: note the `*` (binary mode), which matters for Scoop/winget regexes. Get the sums with `gh release download v0.4.0 -R frycz/keb --pattern '*.sha256' --pattern sha256.sum` into the scratchpad. Don't copy hashes from memory.
+- **Unix tarballs have a top-level directory:** `keb-<triple>/keb`, `keb-<triple>/man/keb.1`, `keb-<triple>/completions/{keb.bash,_keb,keb.fish,_keb.ps1,keb.elv}`, `keb-<triple>/{LICENSE-MIT,README.md,CHANGELOG.md}`.
+- **The Windows zip is flat:** `keb.exe`, `man/`, `completions/`, `LICENSE-MIT` and so on at the root, with no top-level directory.
+- **Source for from-source builds:** the crates.io tarball `https://static.crates.io/crates/keb/keb-0.4.0.crate` or the GitHub tag archive `https://github.com/frycz/keb/archive/refs/tags/v0.4.0.tar.gz`. Both include `man/` and `completions/`, so packagers install those files directly and never need to generate them.
+- **Build notes:** MSRV 1.85, edition 2024. The binary needs the default `cli` feature. `cargo build --release --locked` works.
+- **Tests:**
+  - `tests/cli.rs` creates dirs under `std::env::temp_dir()` and calls `git` (the decision-10 tests), so a sandboxed check needs `git` available (nix: `nativeCheckInputs = [ git ]`).
+  - keb itself shells out to `git mv` for tracked files, but it works without git installed, so git is not a runtime dependency.
+  - Agents still must not run `tests/cli.rs` on the host. Inside a container or Nix sandbox it's fine: that's the point of the sandbox.
+- **Identity for manifests:** maintainer `Adam Sawicki <frycz.dev@gmail.com>`, GitHub `frycz`, license `MIT` (0.4.0 is MIT only), homepage `https://github.com/frycz/keb`, description "Rename files to kebab case, safely and idempotently".
+
+### Tasks
+
+Put everything under `packaging/<channel>/` in this repo, and add `packaging/` to `exclude` in `Cargo.toml`. The owner copies each channel's files to its destination repo.
+
+- [ ] **AUR:** two PKGBUILDs + `.SRCINFO`.
+  - `keb` builds from the crate source with `cargo build --frozen --release`, running `cargo fetch --locked` in `prepare()`, per the Arch Rust package guidelines.
+  - `keb-bin` uses the prebuilt tarballs, with `source_x86_64`/`source_aarch64` and `sha256sums_x86_64`/`sha256sums_aarch64`, and `provides=(keb)` / `conflicts=(keb)`.
+  - Install the man page to `/usr/share/man/man1`, the completions to `/usr/share/bash-completion/completions/keb`, `/usr/share/zsh/site-functions/_keb` and `/usr/share/fish/vendor_completions.d/keb.fish`, and the license to `/usr/share/licenses/<pkgname>/`.
+  - Verify with `makepkg` + `namcap` in an `archlinux` container, as a non-root user.
+- [ ] **nixpkgs:** `pkgs/by-name/ke/keb/package.nix`.
+  - Use `rustPlatform.buildRustPackage` with `fetchFromGitHub` (`tag = "v${version}"`), plus `cargoHash`: get it with a fake hash first and the real one from the error.
+  - Use `installShellFiles` (`installManPage man/keb.1`, `installShellCompletion --cmd keb --bash completions/keb.bash --zsh completions/_keb --fish completions/keb.fish`), `meta.license = lib.licenses.mit` and `meta.mainProgram = "keb"`.
+  - Verify with `nix-build` in a `nixos/nix` container. If sandbox tests fail, prefer fixing inputs (`git`) over `doCheck = false`, and explain any `checkFlags` skips in a comment.
+- [ ] **winget:** manifest set for `frycz.keb` 0.4.0: version, `installer` and `defaultLocale` files.
+  - Installer: `InstallerType: zip` with `NestedInstallerType: portable`, `NestedInstallerFiles: [{RelativeFilePath: keb.exe, PortableCommandAlias: keb}]`, x64 only.
+  - Write the manifests by hand or with `wingetcreate new`. Validate with `winget validate` if a Windows host is available; otherwise check them against the published schema and say they are unvalidated.
+- [ ] **Scoop:** `keb.json` for a new `frycz/scoop-bucket` repo.
+  - The `64bit` URL is the Windows zip, with `bin: "keb.exe"`.
+  - `checkver` uses GitHub releases. `autoupdate` puts `$version` in the URL, and `hash.url` points at `$url.sha256`; check that Scoop's default regex copes with the `*` prefix.
+  - Include a minimal bucket `README.md`.
+- [ ] **aqua registry:** `pkgs/frycz/keb/registry.yaml` with `type: github_release`, `repo_owner: frycz`, `repo_name: keb`.
+  - `asset: keb-{{.Arch}}-{{.OS}}.{{.Format}}` with `replacements` amd64→x86_64, arm64→aarch64, darwin→apple-darwin, linux→unknown-linux-gnu, windows→pc-windows-msvc.
+  - `format: tar.xz`, with an override to `zip` on windows.
+  - The binary is at `files: [{name: keb, src: "keb-{{.Arch}}-{{.OS}}/keb"}]` on unix and flat `keb.exe` on windows.
+  - Add a `checksum` block using the per-asset `.sha256` files.
+  - Supported envs: darwin, linux, windows/amd64 (there is no windows/arm64 build). Also add `pkgs/frycz/keb/pkg.yaml`.
+  - Verify with `aqua` in a container if practical: `aqua g`/`aqua i` against a local registry.
+- [ ] Write `packaging.md`. For each channel: what was prepared, where it lives, exact submission steps (accounts, fork/PR, the reviewers' usual asks), and how to bump it on the next release. Also say which channels will update themselves (Scoop autoupdate, the nixpkgs `r-ryantm` bot, aqua Renovate) as input for batch 5.
+- [ ] Add a pointer to `packaging.md` in `publish.md`'s "Verify" step, for checking each channel after a release.
+
+**Done when:** every manifest builds/validates locally where tooling allows (say plainly which ones could not be validated), and `packaging.md` lists the owner's submission steps.
 
 ### Owner, after batch 3
 
@@ -138,7 +203,7 @@ The agent-side work ends here. What remains is the owner's, and it's ongoing:
 |---|---|---|
 | Batch 1 — license, completions, man, GIF, README | agent | ✅ done |
 | Batch 2 — man polish, .deb/.rpm, binstall, preview image, repo metadata | agent | ✅ done |
-| Release 0.4.0, upload preview, set topics | owner | batch 2 |
+| Release 0.4.0, upload preview, set topics | owner | ✅ released; npm, preview, topics unconfirmed |
 | Batch 3 — AUR, nixpkgs, winget, Scoop, aqua manifests | agent | 0.4.0 checksums |
 | Submit packages, answer reviews | owner | batch 3 |
 | Batch 4 — blog post + launch posts | agent | anytime |

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Recreates the messy folder that demo.tape renames. Touches playground/demo only.
+# Recreates the WhatsApp folder that demo.tape and preview.tape rename. Touches playground/demo only.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -10,11 +10,6 @@ mkdir -p "$dir"
 cd "$dir"
 
 touch \
-  "Final Report (v2) FINAL.docx" \
-  "Screenshot 2026-09-29 at 10.14.03.png" \
-  "Ünïcödé Notes.md" \
-  "IMG_0042.JPG" \
-  "MyComponent.tsx" \
-  "Copy of budget (1).xlsx" \
-  "tax_return__2025.PDF" \
-  "already-fine.md"
+  "WhatsApp Image 2026-09-28 at 21.14.03.jpeg" \
+  "WhatsApp Image 2026-09-28 at 21.14.03 (1).jpeg" \
+  "WhatsApp Image 2026-09-28 at 21.14.07.jpeg"
