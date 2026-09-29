@@ -106,7 +106,6 @@ pub enum Target {
 /// makes `--dry-run` predict a multi-file run correctly instead of reporting the same
 /// free name twice.
 pub fn resolve(
-    dir: &Path,
     name: &str,
     from: &Path,
     claimed: &Claims,
@@ -116,7 +115,7 @@ pub fn resolve(
     let mut candidate = name.to_string();
 
     for n in 2.. {
-        let to = dir.join(&candidate);
+        let to = sibling(from, &candidate);
 
         let taken = if claimed.vacated.contains(&to) {
             // The file that was here has already moved out of the way.
@@ -140,6 +139,29 @@ pub fn resolve(
     }
 
     unreachable!("the loop returns or exhausts its bound")
+}
+
+/// `path` with its basename replaced by `name`, and everything before it kept exactly as
+/// the user typed it.
+///
+/// `parent().join(name)` would put the platform's separator in front of the new name,
+/// so on Windows `./A Dir/My File.md` would come out as `./A Dir\my-file.md`: the output
+/// would change a part of the path keb never touches, and `same_file`, which compares
+/// spellings there, would take a case-only rename for a collision.
+pub fn sibling(path: &Path, name: &str) -> PathBuf {
+    let dir = path.parent().unwrap_or(Path::new(""));
+    // `parent` is always a prefix of the path, so the byte after it is the separator the
+    // user typed, unless the parent is empty, a root, or a bare prefix such as `C:`.
+    let bytes = path.as_os_str().as_encoded_bytes();
+    let sep = |i: usize| bytes.get(i).is_some_and(|&b| std::path::is_separator(b as char));
+    let len = dir.as_os_str().len();
+    if len == 0 || sep(len - 1) || !sep(len) {
+        return dir.join(name);
+    }
+    let mut out = dir.as_os_str().to_owned();
+    out.push(if bytes[len] == b'/' { "/" } else { "\\" });
+    out.push(name);
+    PathBuf::from(out)
 }
 
 /// Paths this run has spoken for.
@@ -180,9 +202,10 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 
 /// Without inode numbers the best available test is the one the filesystem itself
 /// uses: NTFS is case-insensitive, so two paths differing only in case are one file.
+/// Separators are normalised too, since `/` and `\` name the same directory there.
 #[cfg(not(unix))]
 pub fn same_file(a: &Path, b: &Path) -> bool {
-    let key = |p: &Path| p.as_os_str().to_string_lossy().to_lowercase();
+    let key = |p: &Path| p.as_os_str().to_string_lossy().to_lowercase().replace('/', "\\");
     exists(a) && exists(b) && key(a) == key(b)
 }
 
@@ -276,4 +299,33 @@ fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
 #[cfg(not(unix))]
 fn os_str(bytes: &[u8]) -> std::ffi::OsString {
     std::ffi::OsString::from(String::from_utf8_lossy(bytes).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sibling;
+    use std::path::Path;
+
+    fn sib(path: &str) -> String {
+        sibling(Path::new(path), "my-file.md").display().to_string()
+    }
+
+    #[test]
+    fn sibling_keeps_the_parent_as_typed() {
+        assert_eq!(sib("./A Dir/My File.md"), "./A Dir/my-file.md");
+        assert_eq!(sib("a//b/My File.md"), "a//b/my-file.md");
+        assert_eq!(sib("My File.md"), "my-file.md");
+        assert_eq!(sib("./My File.md"), "./my-file.md");
+        assert_eq!(sib("/My File.md"), "/my-file.md");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn sibling_keeps_the_separator_the_user_typed() {
+        assert_eq!(sib(r".\A Dir\My File.md"), r".\A Dir\my-file.md");
+        assert_eq!(sib(r"./A Dir\My File.md"), r"./A Dir\my-file.md");
+        assert_eq!(sib(r".\A Dir/My File.md"), r".\A Dir/my-file.md");
+        assert_eq!(sib(r"C:\My File.md"), r"C:\my-file.md");
+        assert_eq!(sib("C:My File.md"), "C:my-file.md");
+    }
 }

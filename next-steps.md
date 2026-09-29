@@ -71,16 +71,12 @@ The plan for taking keb from "published" to "available everywhere, and known". W
 ### State when batch 2 ended (2026-09-29)
 
 - **0.4.0 is released.** Published on crates.io, tagged `v0.4.0`, and the Release exists. The Release CI results: every build, `host`, Homebrew and both `custom-linux-packages` jobs succeeded. `publish-npm` failed as expected (the npm gap in `publish.md`), so `announce` was skipped.
-- **Not confirmed done by the owner yet.** Ask before assuming, and don't block on them:
-  - `npm publish` by hand.
-  - Upload the social preview.
-  - Run the `gh repo edit` command.
-- **`ci.yml` is red on Windows. Fix this before batch 3.** It is pre-existing, not from batch 2.
-  - Clippy used to fail first, on an `OsStr` import only the Unix code used; that is fixed in `6da4d71`. With clippy passing, 13 tests in `tests/cli.rs` now fail on `windows-latest` (run 36573886405). macOS and Ubuntu are green.
-  - Two causes, both path separators:
-    1. **Test-only:** the sandbox's `tree()` helper lists paths with `\`, while the tests expect `/`. Example: `["my-dir", "my-dir\\My File.md"]` vs `["my-dir", "my-dir/My File.md"]`.
-    2. **Real Windows output quirk:** keb builds the new path with `parent.join(new)`, so the output mixes separators: `./A Dir/My File.md -> ./A Dir\my-file.md`. Decide whether to keep the parent exactly as the user typed it and append the separator they used, or to accept native separators and normalise in the tests. The first is more consistent with "only the basename changes", and the `--absolute` and `json` outputs are affected the same way.
-  - Agents can't run `tests/cli.rs` locally (rules above). Iterate via CI on a branch the owner pushes, or reason from the failures in the log (`gh run view <id> --log-failed`).
+- **Owner confirmed done:** `npm publish` by hand, social preview uploaded, `gh repo edit` run.
+- **`ci.yml` Windows failures: fixed in the working tree, not yet proven in CI.** 13 tests in `tests/cli.rs` failed on `windows-latest` (run 36573886405).
+  - keb now keeps the parent path exactly as typed: `rename::sibling` replaces only the basename and reuses the separator the user typed, so `./A Dir/My File.md -> ./A Dir/my-file.md` and `.\A Dir\My File.md -> .\A Dir\my-file.md`. This also fixes a latent Windows bug: `same_file` compares spellings there, so a case-only rename under a `/`-typed parent was taken for a collision. `same_file` now also normalises separators.
+  - Tests: `tree()` joins components with `/`; the `--absolute` tests go through a `Sandbox::absolute` helper (no `canonicalize` on Windows, which returns the `\\?\` form and long names); the two JSON tests are `#[cfg(unix)]` because Windows forbids `"` and newlines in filenames; there is a new Windows-only `keeps_the_separator_the_user_typed` test.
+  - `-r` paths still get the native separator below the root, because the walker uses `dir.join`. Old and new paths stay consistent with each other.
+  - **Owner:** run the full `cargo test`, push, and check that Windows CI is green.
 - **The `.deb`/`.rpm` job is now proven in CI.**
 
 ### Facts about the 0.4.0 Release (checked, don't re-derive)
@@ -203,7 +199,7 @@ The agent-side work ends here. What remains is the owner's, and it's ongoing:
 |---|---|---|
 | Batch 1 — license, completions, man, GIF, README | agent | ✅ done |
 | Batch 2 — man polish, .deb/.rpm, binstall, preview image, repo metadata | agent | ✅ done |
-| Release 0.4.0, upload preview, set topics | owner | ✅ released; npm, preview, topics unconfirmed |
+| Release 0.4.0, upload preview, set topics | owner | ✅ done |
 | Batch 3 — AUR, nixpkgs, winget, Scoop, aqua manifests | agent | 0.4.0 checksums |
 | Submit packages, answer reviews | owner | batch 3 |
 | Batch 4 — blog post + launch posts | agent | anytime |

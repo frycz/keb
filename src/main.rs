@@ -277,19 +277,15 @@ fn step(
         }
     }
 
-    let dir = path.parent().unwrap_or(Path::new(""));
-
     // `-f` overwrites a file, but never a directory: replacing one would mean deleting
     // whatever is inside it, which invariant 1 does not allow at any force level. Fall
     // back to suffixing, and say so rather than looking like the flag was ignored.
-    if mover.force && dir.join(&new).is_dir() && !rename::same_file(path, &dir.join(&new)) {
-        eprintln!(
-            "keb: {}: a directory is in the way, suffixing instead",
-            dir.join(&new).display()
-        );
+    let target = rename::sibling(path, &new);
+    if mover.force && target.is_dir() && !rename::same_file(path, &target) {
+        eprintln!("keb: {}: a directory is in the way, suffixing instead", target.display());
     }
 
-    let to = match rename::resolve(dir, &new, path, claims, mover.force, opts) {
+    let to = match rename::resolve(&new, path, claims, mover.force, opts) {
         Target::Free(to) => to,
         Target::Overwrite(to) => {
             eprintln!("keb: {}: overwriting", to.display());

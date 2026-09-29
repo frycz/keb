@@ -60,6 +60,7 @@ impl Sandbox {
     }
 
     /// Every entry under the sandbox, relative and sorted — the whole observable state.
+    /// Joined with `/` on every platform, so one expectation serves Windows too.
     fn tree(&self) -> Vec<String> {
         fn visit(dir: &Path, base: &Path, out: &mut Vec<String>) {
             let mut entries: Vec<_> =
@@ -69,7 +70,9 @@ impl Sandbox {
                 if path.file_name() == Some(OsStr::new(".git")) {
                     continue;
                 }
-                out.push(path.strip_prefix(base).unwrap().display().to_string());
+                let rel = path.strip_prefix(base).unwrap();
+                let parts: Vec<_> = rel.iter().map(|c| c.to_string_lossy()).collect();
+                out.push(parts.join("/"));
                 if path.is_dir() {
                     visit(&path, base, out);
                 }
@@ -78,6 +81,20 @@ impl Sandbox {
         let mut out = Vec::new();
         visit(&self.dir, &self.dir, &mut out);
         out
+    }
+
+    /// What `--absolute` should print for `rel`. `absolute()` prefixes the kernel's cwd,
+    /// which on macOS is already symlink-resolved: the system temp dir is reached through
+    /// one (/var -> /private/var). That is unavoidable and harmless, so resolve it here
+    /// too. Not on Windows, where `canonicalize` returns the `\\?\` verbatim form and
+    /// expands 8.3 short names (`RUNNER~1`) that the cwd keeps; `absolute()` there also
+    /// turns every `/` into `\`, which is why the expectation goes through it as well.
+    fn absolute(&self, rel: &str) -> String {
+        #[cfg(unix)]
+        let root = self.dir.canonicalize().unwrap();
+        #[cfg(not(unix))]
+        let root = self.dir.clone();
+        std::path::absolute(root.join(rel)).unwrap().display().to_string()
     }
 
     fn exists(&self, name: &str) -> bool {
@@ -135,6 +152,23 @@ fn renames_only_the_basename() {
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert_eq!(run.renames(), ["./A Dir/My File.md -> ./A Dir/my-file.md"]);
     assert_eq!(s.tree(), ["A Dir", "A Dir/my-file.md"]);
+}
+
+/// Only the basename changes, so a Windows user who typed `\` gets `\` back, and one who
+/// typed `/` gets `/` — never a path that mixes the two because keb joined it.
+#[cfg(windows)]
+#[test]
+fn keeps_the_separator_the_user_typed() {
+    let s = Sandbox::new();
+    s.touch("A Dir/My File.md");
+    s.touch("B Dir/My File.md");
+
+    let run = s.keb(["-n", r".\A Dir\My File.md", "./B Dir/My File.md"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(
+        run.renames(),
+        [r".\A Dir\My File.md -> .\A Dir\my-file.md", "./B Dir/My File.md -> ./B Dir/my-file.md"]
+    );
 }
 
 #[test]
@@ -717,6 +751,8 @@ fn format_null_separates_with_nul() {
 
 /// The arrow format cannot survive a newline in a filename — the record breaks in two.
 /// `json` is the format that can, which is the reason it exists.
+// Windows forbids control characters and `"` in filenames, so the next two cannot set up there.
+#[cfg(unix)]
 #[test]
 fn format_json_survives_a_newline_in_a_filename() {
     let s = Sandbox::new();
@@ -730,6 +766,7 @@ fn format_json_survives_a_newline_in_a_filename() {
     assert_eq!(json.stdout, "{\"from\":\"Bad\\nName.md\",\"to\":\"bad-name.md\"}\n");
 }
 
+#[cfg(unix)]
 #[test]
 fn format_json_escapes_quotes_and_backslashes() {
     let s = Sandbox::new();
@@ -743,16 +780,12 @@ fn format_json_escapes_quotes_and_backslashes() {
 fn absolute_prints_full_paths() {
     let s = Sandbox::new();
     s.touch("Sub Dir/My File.md");
-    // `absolute()` prefixes the kernel's cwd, which is already symlink-resolved: the
-    // system temp dir is reached through one on macOS (/var -> /private/var). That is
-    // unavoidable and harmless, so compare against the resolved form.
-    let root = s.dir.canonicalize().unwrap();
 
     let run = s.keb(["-n", "--absolute", "Sub Dir/My File.md"]);
     assert_eq!(run.code, 0, "{}", run.stderr);
     let (from, to) = run.stdout.trim_end().split_once(" -> ").expect("arrow format");
-    assert_eq!(from, root.join("Sub Dir/My File.md").display().to_string());
-    assert_eq!(to, root.join("Sub Dir/my-file.md").display().to_string());
+    assert_eq!(from, s.absolute("Sub Dir/My File.md"));
+    assert_eq!(to, s.absolute("Sub Dir/my-file.md"));
 }
 
 /// The property that matters: a symlink *named in the argument* is preserved, because keb
@@ -775,8 +808,7 @@ fn absolute_does_not_resolve_a_symlink_in_the_path() {
 fn absolute_composes_with_format() {
     let s = Sandbox::new();
     s.touch("My File.md");
-    let root = s.dir.canonicalize().unwrap();
 
     let run = s.keb(["-n", "--absolute", "--format=new", "My File.md"]);
-    assert_eq!(run.stdout.trim_end(), root.join("my-file.md").display().to_string());
+    assert_eq!(run.stdout.trim_end(), s.absolute("my-file.md"));
 }
