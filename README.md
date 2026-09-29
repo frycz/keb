@@ -1,6 +1,8 @@
 # keb
 
-Rename files to kebab case.
+Rename files to kebab case — safely, and without writing a regex.
+
+![keb turning a folder of messy filenames into kebab case](https://raw.githubusercontent.com/frycz/keb/main/demo/keb.gif)
 
 ```console
 $ keb "My File.md"
@@ -34,6 +36,18 @@ curl -sSf https://github.com/frycz/keb/releases/download/v0.3.0/keb-installer.sh
 ```
 
 Prebuilt binaries for macOS (Apple Silicon and Intel), Linux (x64 and ARM64) and Windows x64 are on the [releases page](https://github.com/frycz/keb/releases).
+
+## Why not `rename` or `mmv`?
+
+`rename`, `perl-rename` and `mmv` apply a pattern you write. keb has one transformation built in, and the work is in the cases a one-line regex gets wrong:
+
+- `XMLHttpRequest.MD` becomes `xml-http-request.md`, while `v1.2.3`, `sha256` and `1080p` stay intact.
+- `.tar.gz` and `.d.ts` survive whole; `.gitignore` is left alone.
+- `Żółć` becomes `zolc` and `Привет` becomes `privet`; `日本語` is kept as it is.
+- Two names that would both become `my-report.md` get `my-report.md` and `my-report-2.md`; nothing is overwritten.
+- Case-only renames (`README.md` → `readme.md`) work on case-insensitive filesystems.
+- `Makefile`, `[slug].tsx` and `__init__.py` are never touched by a recursive sweep.
+- Running it twice changes nothing.
 
 ## Usage
 

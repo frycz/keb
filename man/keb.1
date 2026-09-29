@@ -1,0 +1,82 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH keb 1  "keb 0.3.0" 
+.SH NAME
+keb \- Rename files to kebab case, safely and idempotently
+.SH SYNOPSIS
+\fBkeb\fR [\fB\-n\fR|\fB\-\-dry\-run\fR] [\fB\-r\fR|\fB\-\-recursive\fR] [\fB\-f\fR|\fB\-\-force\fR] [\fB\-d\fR|\fB\-\-allow\-dirs\fR] [\fB\-0\fR|\fB\-\-null\fR] [\fB\-\-separator\fR] [\fB\-\-ascii\fR] [\fB\-\-max\-length\fR] [\fB\-\-format\fR] [\fB\-\-absolute\fR] [\fB\-\-list\-protected\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIPATHS\fR] 
+.SH DESCRIPTION
+Rename files to kebab case, safely and idempotently
+.SH OPTIONS
+.TP
+\fB\-n\fR, \fB\-\-dry\-run\fR
+Print the plan, change nothing
+.TP
+\fB\-r\fR, \fB\-\-recursive\fR
+Recurse into directories
+.TP
+\fB\-f\fR, \fB\-\-force\fR
+Overwrite on collision, and rename protected names under \-r
+.TP
+\fB\-d\fR, \fB\-\-allow\-dirs\fR
+Permit renaming directories. Without it, only files are renamed
+.TP
+\fB\-0\fR, \fB\-\-null\fR
+Paths on stdin are null\-separated, for `find \-print0`
+.TP
+\fB\-\-separator\fR \fI<CHAR>\fR
+Emit this character between words instead of `\-`
+.TP
+\fB\-\-ascii\fR
+Narrow the output to ASCII, dropping scripts that are otherwise kept
+.TP
+\fB\-\-max\-length\fR \fI<N>\fR
+Override the 255 byte / UTF\-16 unit name limit
+.TP
+\fB\-\-format\fR \fI<FMT>\fR [default: arrow]
+How to print each rename; `json` and `null` are the parse\-safe ones
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+arrow: `old \-> new`
+.IP \(bu 2
+old: The name before the rename
+.IP \(bu 2
+new: The name after the rename
+.IP \(bu 2
+json: One JSON object per line: `{"from":"…","to":"…"}`
+.IP \(bu 2
+null: `old\\0new\\0`, for `xargs \-0`
+.RE
+.TP
+\fB\-\-absolute\fR
+Print absolute paths. Lexical only — symlinks are not resolved
+.TP
+\fB\-\-list\-protected\fR
+List the names keb never renames, and why. Renames nothing
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.TP
+[\fIPATHS\fR]
+Paths to rename. `\-` reads a list from stdin
+.SH EXTRA
+Examples:
+  keb \-n *                    Print the plan, change nothing
+  keb *                       Rename every file here
+  keb \-r docs                 Whole tree, filenames only
+  keb \-dr Photos              ...directory names too
+  keb \-\-separator=_ *         Snake case instead
+  find . \-name \*(Aq*.md\*(Aq | keb   Anything that lists paths
+  keb \-n \-\-format=json *      One JSON record per rename, safe to parse
+
+Renames cannot be undone. Run \-n first on anything you have not renamed before.
+Some names are never renamed; \-\-list\-protected says which, and why.
+.SH VERSION
+v0.3.0

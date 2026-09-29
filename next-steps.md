@@ -4,13 +4,13 @@ Distribution plumbing is done (crates.io, npm, Homebrew tap, shell installer, 5 
 
 ## 1. Packaging readiness
 
-- [ ] **Make the license MIT-only.** `Cargo.toml` declares `MIT OR Apache-2.0` but only `LICENSE-MIT` exists — a mismatch Debian/Fedora reviewers flag. Fine to drop Apache: sole author, no outside contributions.
+- [x] **Make the license MIT-only.** `Cargo.toml` declares `MIT OR Apache-2.0` but only `LICENSE-MIT` exists — a mismatch Debian/Fedora reviewers flag. Fine to drop Apache: sole author, no outside contributions.
   - `Cargo.toml` line 7: `license = "MIT OR Apache-2.0"` → `license = "MIT"`. The only change needed.
   - The npm `package.json` and Homebrew formula are generated from it by dist — they update on the next release.
   - Leave `.github/workflows/release.yml` line 4 (`SPDX-License-Identifier: MIT or Apache-2.0`) alone: it's the license of cargo-dist's generated workflow, not keb's.
   - README (`## License` → MIT) and `LICENSE-MIT` are already correct.
   - Already-published 0.1.0–0.3.0 stay dual-licensed; that can't be revoked. Only new releases are MIT-only.
-- [ ] **Shell completions + man page** via `clap_complete` / `clap_mangen`; ship them in dist archives. Distro packagers expect both (no man page = Debian lintian warning).
+- [x] **Shell completions + man page** via `clap_complete` / `clap_mangen`; ship them in dist archives. Distro packagers expect both (no man page = Debian lintian warning).
 - [ ] **GitHub repo metadata:** topics, homepage URL, social preview image. Topics drive GitHub search.
 - [ ] **`.deb` / `.rpm` release assets** (`cargo-deb` / `cargo-generate-rpm` or `nfpm`) — instant Linux install before any distro packages it.
 

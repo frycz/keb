@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Shell completions (bash, zsh, fish, PowerShell, elvish) and a man page, in
+  `completions/` and `man/` and in every release archive. They are generated from
+  the clap definition and committed, so they ship in the source tarball where
+  distro packagers look for them; `tests/generated.rs` fails when they drift.
+
+### Changed
+
+- Licensed MIT only. `Cargo.toml` declared `MIT OR Apache-2.0`, but the Apache
+  license text was never shipped. Releases up to 0.3.0 keep the dual license.
+
 ## [0.3.0] — 2026-09-28
 
 ### Added

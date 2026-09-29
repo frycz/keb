@@ -15,6 +15,13 @@ not derive from `Cargo.toml`.
 grep -rn "$OLD_VERSION" --include='*.md' --include='*.toml' . | grep -v Cargo.lock
 ```
 
+Regenerate the man page and completions — the man page carries the version, so
+`tests/generated.rs` fails after every bump until you do:
+
+```sh
+KEB_REGENERATE=1 cargo test --test generated
+```
+
 Update `CHANGELOG.md`, then commit — `cargo package` reads the git tree, not the
 working directory, and refuses outright while it is dirty:
 

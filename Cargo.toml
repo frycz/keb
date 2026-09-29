@@ -4,13 +4,13 @@ version     = "0.3.0"
 edition     = "2024"
 rust-version = "1.85"
 description = "Rename files to kebab case, safely and idempotently"
-license     = "MIT OR Apache-2.0"
+license     = "MIT"
 repository  = "https://github.com/frycz/keb"
 homepage    = "https://github.com/frycz/keb"
 readme      = "README.md"
 keywords    = ["kebab-case", "rename", "filename", "slug", "cli"]
 categories  = ["command-line-utilities", "filesystem", "text-processing"]
-exclude     = ["design/", "publish.md", "atm.json", ".github/"]
+exclude     = ["design/", "demo/", "publish.md", "next-steps.md", "atm.json", ".github/"]
 
 [lib]
 name = "keb"
@@ -41,7 +41,13 @@ unicode-segmentation = "1"
 # is hand-written rather than pulled from `deunicode`, because decision 2 romanizes
 # only the scripts where that is deterministic and keeps the rest verbatim.
 
+[[test]]
+name              = "generated"
+required-features = ["cli"]
+
 [dev-dependencies]
+clap_complete = "4.6.11"
+clap_mangen = "0.3.3"
 proptest = "1"
 
 [profile.release]
@@ -69,6 +75,8 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Extra static files to include in each App (path relative to this Cargo.toml's dir)
+include = ["completions/", "man/"]
 
 [profile.dist]
 inherits = "release"

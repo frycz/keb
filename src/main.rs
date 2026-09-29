@@ -7,6 +7,7 @@
 //! **stdout** as `old -> new`, warnings and errors to **stderr**. That split is what
 //! `--verbose` and `--quiet` would have been, so neither flag exists.
 
+mod cli;
 mod protect;
 mod rename;
 mod walk;
@@ -19,95 +20,9 @@ use std::process::ExitCode;
 
 use clap::{CommandFactory, Parser};
 
+use cli::{Cli, Format};
+
 use rename::{Claims, Mover, Target};
-
-/// Shown under both `-h` and `--help`, because a bare `keb` at a prompt prints the help
-/// and this is the only place the one rule that matters — `-n` first, there is no undo —
-/// reaches someone who has not read the README.
-const EXAMPLES: &str = "\
-Examples:
-  keb -n *                    Print the plan, change nothing
-  keb *                       Rename every file here
-  keb -r docs                 Whole tree, filenames only
-  keb -dr Photos              ...directory names too
-  keb --separator=_ *         Snake case instead
-  find . -name '*.md' | keb   Anything that lists paths
-  keb -n --format=json *      One JSON record per rename, safe to parse
-
-Renames cannot be undone. Run -n first on anything you have not renamed before.
-Some names are never renamed; --list-protected says which, and why.";
-
-/// Rename files to kebab case, safely and idempotently.
-///
-/// Only the basename changes; parent directories are never touched. With no paths,
-/// reads a list from stdin, so `find . -name '*.md' | keb` works.
-#[derive(Parser)]
-#[command(name = "keb", version, about, long_about = None, after_help = EXAMPLES)]
-struct Cli {
-    /// Paths to rename. `-` reads a list from stdin.
-    paths: Vec<PathBuf>,
-
-    /// Print the plan, change nothing.
-    #[arg(short = 'n', long)]
-    dry_run: bool,
-
-    /// Recurse into directories.
-    #[arg(short = 'r', long)]
-    recursive: bool,
-
-    /// Overwrite on collision, and rename protected names under -r.
-    #[arg(short = 'f', long)]
-    force: bool,
-
-    /// Permit renaming directories. Without it, only files are renamed.
-    #[arg(short = 'd', long)]
-    allow_dirs: bool,
-
-    /// Paths on stdin are null-separated, for `find -print0`.
-    #[arg(short = '0', long = "null")]
-    null: bool,
-
-    /// Emit this character between words instead of `-`.
-    #[arg(long, value_name = "CHAR")]
-    separator: Option<char>,
-
-    /// Narrow the output to ASCII, dropping scripts that are otherwise kept.
-    #[arg(long)]
-    ascii: bool,
-
-    /// Override the 255 byte / UTF-16 unit name limit.
-    #[arg(long, value_name = "N")]
-    max_length: Option<usize>,
-
-    /// How to print each rename; `json` and `null` are the parse-safe ones.
-    #[arg(long, value_name = "FMT", default_value = "arrow")]
-    format: Format,
-
-    /// Print absolute paths. Lexical only — symlinks are not resolved.
-    #[arg(long)]
-    absolute: bool,
-
-    /// List the names keb never renames, and why. Renames nothing.
-    #[arg(long)]
-    list_protected: bool,
-}
-
-/// One record per rename on stdout. `arrow` is for reading; `json` and `null` are the
-/// only two that survive a filename containing a newline or a literal ` -> `, both of
-/// which are legal on Unix and both of which make `arrow` ambiguous to parse.
-#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-enum Format {
-    /// `old -> new`
-    Arrow,
-    /// The name before the rename.
-    Old,
-    /// The name after the rename.
-    New,
-    /// One JSON object per line: `{"from":"…","to":"…"}`.
-    Json,
-    /// `old\0new\0`, for `xargs -0`.
-    Null,
-}
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
