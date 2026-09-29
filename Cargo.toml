@@ -1,6 +1,6 @@
 [package]
 name        = "keb"
-version     = "0.4.0"
+version     = "0.4.1"
 edition     = "2024"
 rust-version = "1.85"
 description = "Rename files to kebab case, safely and idempotently"

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-09-29
+
 ### Fixed
 
 - `keb -r .` and `keb -r ..` no longer print `no basename to rename` and exit 1 after a successful sweep. A `-r` root with no name of its own is swept and left alone, like any other root. Without `-r`, `keb -d .` is still refused.
@@ -132,7 +134,8 @@ refused, with `renaming is not implemented yet (stub build)`.
 - Names are truncated on grapheme boundaries.
 - Invalid-UTF-8 names are renamed anyway, with every dropped byte reported.
 
-[Unreleased]: https://github.com/frycz/keb/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/frycz/keb/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/frycz/keb/releases/tag/v0.4.1
 [0.4.0]: https://github.com/frycz/keb/releases/tag/v0.4.0
 [0.3.0]: https://github.com/frycz/keb/releases/tag/v0.3.0
 [0.2.0]: https://github.com/frycz/keb/releases/tag/v0.2.0
