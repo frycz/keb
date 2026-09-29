@@ -1,0 +1,59 @@
+# Builds .deb and .rpm packages from the Release's Linux binaries and uploads them to
+# the same Release. release.yml calls it as a dist custom publish job, after `host` has
+# created the Release. A separate `on: release` workflow would never fire: the Release
+# is created with GITHUB_TOKEN, and events caused by that token trigger no workflows.
+#
+# The binaries are taken from the Release's own tarballs rather than rebuilt, so every
+# channel ships the same bytes. Package metadata and file layout are in Cargo.toml.
+
+name: Linux packages
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+jobs:
+  package:
+    name: package (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The runners dist builds these targets on, so `cargo deb` resolves the
+          # glibc dependency natively instead of cross-inspecting a foreign binary.
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb@3.8.0,cargo-generate-rpm@0.21.0
+      - name: Fetch the Release's binary
+        run: |
+          gh release download "$TAG" --pattern "keb-$TARGET.tar.xz" --dir "$RUNNER_TEMP"
+          tar -xJf "$RUNNER_TEMP/keb-$TARGET.tar.xz" -C "$RUNNER_TEMP"
+          install -D -m 755 "$RUNNER_TEMP/keb-$TARGET/keb" "target/$TARGET/release/keb"
+      - name: Build packages
+        run: |
+          # --no-strip: dist's profile already strips, and the bytes stay the tarball's
+          cargo deb --no-build --no-strip --target "$TARGET" --output target/packages/
+          cargo generate-rpm --target "$TARGET" --output target/packages/
+          cd target/packages
+          for f in *.deb *.rpm; do sha256sum "$f" > "$f.sha256"; done
+          ls -l
+      - name: Upload to the Release
+        run: gh release upload "$TAG" target/packages/* --clobber

@@ -1,12 +1,28 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
 .TH keb 1  "keb 0.3.0" 
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
 .SH NAME
 keb \- Rename files to kebab case, safely and idempotently
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
 .SH SYNOPSIS
 \fBkeb\fR [\fB\-n\fR|\fB\-\-dry\-run\fR] [\fB\-r\fR|\fB\-\-recursive\fR] [\fB\-f\fR|\fB\-\-force\fR] [\fB\-d\fR|\fB\-\-allow\-dirs\fR] [\fB\-0\fR|\fB\-\-null\fR] [\fB\-\-separator\fR] [\fB\-\-ascii\fR] [\fB\-\-max\-length\fR] [\fB\-\-format\fR] [\fB\-\-absolute\fR] [\fB\-\-list\-protected\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIPATHS\fR] 
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
 .SH DESCRIPTION
-Rename files to kebab case, safely and idempotently
+keb renames files so their names are kebab case: lowercase words joined by hyphens. The extension is kept and lowercased, and only the basename changes; parent directories are never touched. Names already in kebab case are left alone and print nothing, so running keb twice changes nothing.
+.PP
+With no paths, or with \-, keb reads a list of paths from stdin, one per line, or null\-separated with \-0. Paths are renamed deepest first, so renaming a directory never invalidates a path still queued beneath it.
+.PP
+Only files are renamed unless \-d is given. \-r recurses into directories and renames the files it finds; with \-d as well, it renames the directories too.
+.PP
+When several names would become the same, one keeps it and the others get a numeric suffix (\-2, \-3, ...); nothing is overwritten unless \-f is given. Names that a tool looks up literally, such as Makefile, LICENSE or __init__.py, are protected: skipped under \-r, renamed with a warning when named explicitly. \-f renames them under \-r too. \-\-list\-protected prints the full list and the reason for each.
+.PP
+Each rename is printed to stdout, one per line. Warnings, errors and the summary line go to stderr.
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
 .SH OPTIONS
 .TP
 \fB\-n\fR, \fB\-\-dry\-run\fR
@@ -47,7 +63,7 @@ old: The name before the rename
 .IP \(bu 2
 new: The name after the rename
 .IP \(bu 2
-json: One JSON object per line: `{"from":"…","to":"…"}`
+json: One JSON object per line: `{"from":"...","to":"..."}`
 .IP \(bu 2
 null: `old\\0new\\0`, for `xargs \-0`
 .RE
@@ -66,17 +82,45 @@ Print version
 .TP
 [\fIPATHS\fR]
 Paths to rename. `\-` reads a list from stdin
-.SH EXTRA
-Examples:
-  keb \-n *                    Print the plan, change nothing
-  keb *                       Rename every file here
-  keb \-r docs                 Whole tree, filenames only
-  keb \-dr Photos              ...directory names too
-  keb \-\-separator=_ *         Snake case instead
-  find . \-name \*(Aq*.md\*(Aq | keb   Anything that lists paths
-  keb \-n \-\-format=json *      One JSON record per rename, safe to parse
-
-Renames cannot be undone. Run \-n first on anything you have not renamed before.
-Some names are never renamed; \-\-list\-protected says which, and why.
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.SH EXAMPLES
+.TP
+\fBkeb \-n *\fR
+Print the plan, change nothing
+.TP
+\fBkeb *\fR
+Rename every file here
+.TP
+\fBkeb \-r docs\fR
+Whole tree, filenames only
+.TP
+\fBkeb \-dr Photos\fR
+\&...directory names too
+.TP
+\fBkeb \-\-separator=_ *\fR
+Snake case instead
+.TP
+\fBfind . \-name \*(Aq*.md\*(Aq | keb\fR
+Anything that lists paths
+.TP
+\fBkeb \-n \-\-format=json *\fR
+One JSON record per rename, safe to parse
+.PP
+Renames cannot be undone. Run \-n first on anything you have not renamed before. Some names are never renamed; \-\-list\-protected says which, and why.
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.SH "EXIT STATUS"
+.TP
+\fB0\fR
+Every path was renamed or needed no change. Protected names \-r skipped count as no change.
+.TP
+\fB1\fR
+At least one path was not renamed: it does not exist, it is a directory given without \-d, or its name has no kebab form. The other paths were still processed.
+.TP
+\fB2\fR
+A usage error, such as an unknown option or an empty list of paths, or an error that stopped the run.
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
 .SH VERSION
 v0.3.0

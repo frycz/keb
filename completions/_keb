@@ -20,7 +20,7 @@ _keb() {
 '--format=[How to print each rename; \`json\` and \`null\` are the parse-safe ones]:FMT:((arrow\:"\`old -> new\`"
 old\:"The name before the rename"
 new\:"The name after the rename"
-json\:"One JSON object per line\: \`{"from"\:"…","to"\:"…"}\`"
+json\:"One JSON object per line\: \`{"from"\:"...","to"\:"..."}\`"
 null\:"\`old\\0new\\0\`, for \`xargs -0\`"))' \
 '-n[Print the plan, change nothing]' \
 '--dry-run[Print the plan, change nothing]' \

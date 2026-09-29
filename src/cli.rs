@@ -9,8 +9,10 @@ use clap::Parser;
 
 /// Shown under both `-h` and `--help`, because a bare `keb` at a prompt prints the help
 /// and this is the only place the one rule that matters — `-n` first, there is no undo —
-/// reaches someone who has not read the README.
-const EXAMPLES: &str = "\
+/// reaches someone who has not read the README. `tests/generated.rs` also renders it as
+/// the man page's EXAMPLES section, so it keeps this shape: a heading, one example per
+/// line with the description after a run of spaces, a blank line, then notes.
+pub const EXAMPLES: &str = "\
 Examples:
   keb -n *                    Print the plan, change nothing
   keb *                       Rename every file here
@@ -89,7 +91,7 @@ pub enum Format {
     Old,
     /// The name after the rename.
     New,
-    /// One JSON object per line: `{"from":"…","to":"…"}`.
+    /// One JSON object per line: `{"from":"...","to":"..."}`.
     Json,
     /// `old\0new\0`, for `xargs -0`.
     Null,

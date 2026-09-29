@@ -56,7 +56,7 @@ git tag v0.1.0 && git push --tags
 gh run watch
 ```
 
-CI then runs: `plan` → `build-local-artifacts` (5 targets) → `build-global-artifacts` → `host` (creates the Release) → `publish-homebrew-formula` + `publish-npm` → `announce`. Roughly 5-10 minutes.
+CI then runs: `plan` → `build-local-artifacts` (5 targets) → `build-global-artifacts` → `host` (creates the Release) → `publish-homebrew-formula` + `publish-npm` + `custom-linux-packages` → `announce`. Roughly 5-10 minutes. `custom-linux-packages` adds the `.deb` and `.rpm` files to the Release after it exists; see [Linux packages](#linux-packages).
 
 `publish-npm` **will fail** until the npm gap below is closed. Everything else succeeds independently; only `announce` is skipped.
 
@@ -80,7 +80,10 @@ brew update && brew upgrade keb && keb --version
 npm view @frycz/keb version
 cargo install keb --force
 curl -sSf https://github.com/frycz/keb/releases/download/v0.1.0/keb-installer.sh | sh
+cargo binstall keb
 ```
+
+The Release should list `keb_<version>-1_amd64.deb`, `keb_<version>-1_arm64.deb`, `keb-<version>-1.x86_64.rpm` and `keb-<version>-1.aarch64.rpm`, each with a `.sha256`. To check one installs, see [Linux packages](#linux-packages).
 
 Then check [crates.io/crates/keb](https://crates.io/crates/keb), [docs.rs/keb](https://docs.rs/keb) and [npmjs.com/package/@frycz/keb](https://www.npmjs.com/package/@frycz/keb) render.
 
@@ -135,6 +138,24 @@ Config lives in `Cargo.toml`. `dist` rewrites the block with its own formatting,
 
 ---
 
+# Linux packages
+
+`.github/workflows/linux-packages.yml` builds the `.deb` and `.rpm` for x86_64 and aarch64. `release.yml` calls it as a dist custom publish job (`publish-jobs = [..., "./linux-packages"]` in `Cargo.toml`), after `host` has created the Release. It cannot be a separate `on: release` workflow: the Release is created with `GITHUB_TOKEN`, and events caused by that token trigger no workflows. The job needs `contents: write` to upload, which dist grants through `github-custom-job-permissions`; without it the called job is refused before it starts.
+
+It does not rebuild keb. It downloads the Release's `keb-<target>.tar.xz`, puts the binary where `cargo deb` and `cargo generate-rpm` expect it, and runs both with `--no-build`, so the packages hold the same bytes as the tarballs. Each target runs on the runner dist builds it on, so `cargo deb` reads the glibc requirement from a native binary. Package metadata and the file layout are in `[package.metadata.deb]` and `[package.metadata.generate-rpm]` in `Cargo.toml`.
+
+To check a package by hand, after downloading it into the current directory:
+
+```sh
+docker run --rm -v "$PWD:/pkg" debian:bookworm sh -c 'apt-get update -qq && apt-get install -y -qq man-db /pkg/keb_*_amd64.deb >/dev/null && keb --version && man keb | head'
+# Fedora's image sets tsflags=nodocs, which skips the man page
+docker run --rm -v "$PWD:/pkg" fedora:latest sh -c 'dnf install -y -q --setopt=tsflags= man-db util-linux /pkg/keb-*.x86_64.rpm >/dev/null && keb --version && man keb | head'
+```
+
+On Apple Silicon, add `--platform linux/amd64`, or use the arm64 and aarch64 packages instead.
+
+---
+
 # The npm gap
 
 `dist` 0.32.0 cannot publish to npm from CI on this account, for two compounding reasons:
@@ -163,3 +184,4 @@ Publishes are effectively permanent. crates.io versions can never be reused or d
 | `npm view` 404 right after publishing | CDN lag. Wait a minute. |
 | One target fails to build | Drop it from `targets`, `dist init --yes`, re-tag |
 | `announce` skipped | A publish job failed; the Release itself is fine |
+| `custom-linux-packages` failed | The Release is fine, only the `.deb`/`.rpm` are missing. Fix and re-run the job from the Actions tab; the upload uses `--clobber`, so a re-run is safe. |

@@ -215,6 +215,7 @@ dependencies = [
  "clap_complete",
  "clap_mangen",
  "proptest",
+ "roff",
  "unicode-normalization",
  "unicode-segmentation",
 ]

@@ -35,31 +35,34 @@ The plan for taking keb from "published" to "available everywhere, and known". W
 
 ---
 
-## Batch 2 — finish before the next release (agent)
+## Batch 2 — finish before the next release ✅ done
 
-Everything here must land *before* tagging, because batch 3 needs the release's asset URLs and checksums.
-
-- [ ] **Man page polish.** Rename clap_mangen's default `EXTRA` section to `EXAMPLES` (render sections individually instead of `Man::render`), and give DESCRIPTION a real paragraph instead of repeating the one-line `about`. Regenerate; keep `tests/generated.rs` passing.
-- [ ] **`.deb` / `.rpm` release assets** for x86_64 and aarch64 Linux.
-  - dist does not build these natively. Add a job — dist custom `publish-jobs` or a separate workflow triggered by the release — using `cargo-deb` and `cargo-generate-rpm`, uploading to the GitHub Release.
-  - Install paths: binary `/usr/bin/keb`, man page `/usr/share/man/man1/keb.1`, completions to the standard bash/zsh/fish locations.
-  - Metadata in `Cargo.toml` (`[package.metadata.deb]`, `[package.metadata.generate-rpm]`).
-  - Verify locally by building and installing in Docker (Debian + Fedora images). The CI job itself is only proven on the next tag — say so.
-  - If `release.yml` is touched, re-run `dist init --yes` and confirm it is still in sync (see `publish.md`).
-- [ ] **cargo-binstall.** Check whether `cargo binstall keb` resolves dist's release assets; if not, add `[package.metadata.binstall]` with the correct `pkg-url` / `pkg-fmt`.
-- [ ] **Social preview image** (1280×640, static before → after). Generate with a second tape, e.g. `demo/preview.tape` using VHS `Screenshot`, so it's reproducible like the GIF.
-- [ ] **Repo metadata command.** Prepare (don't run) a `gh repo edit frycz/keb --description … --homepage … --add-topic …` with ~8 topics (e.g. `kebab-case`, `rename`, `cli`, `rust`, `filenames`, `slug`, `unicode`, `command-line-tool`).
-- [ ] Update `CHANGELOG.md` `[Unreleased]` and `publish.md` for anything new (e.g. where .deb/.rpm come from, how to verify them).
-
-**Done when:** all safe checks pass, a local .deb and .rpm install and run `keb --version` + `man keb` in containers, and the owner has the preview image and `gh` command in hand.
+- [x] **Man page polish.** `tests/generated.rs` renders sections one by one. DESCRIPTION is five paragraphs (every claim verified in the playground), EXTRA is gone, and EXAMPLES is built from `cli::EXAMPLES` (now `pub`), so `--help` and the man page cannot drift. Added an EXIT STATUS section, checked against `main.rs`: a directory given without `-d` exits 1, but a protected name skipped under `-r` exits 0. New dev-dependency `roff = "1.1.1"`, which clap_mangen already pulled in. Also replaced `…` with `...` in the `--format json` help, because troff could not render it outside a UTF-8 locale; this touched `completions/_keb` and `keb.fish` too.
+- [x] **`.deb` / `.rpm` release assets.**
+  - `.github/workflows/linux-packages.yml`, a dist custom publish job (`publish-jobs = [..., "./linux-packages"]`). It runs after `host`. A separate `on: release` workflow would never fire, because the Release is created with `GITHUB_TOKEN`.
+  - It repackages the Release's own `keb-<target>.tar.xz` binaries with `cargo deb --no-build --no-strip` and `cargo generate-rpm`, on the same runners dist uses (`ubuntu-22.04`, `ubuntu-22.04-arm`), then uploads the packages and their `.sha256` files with `--clobber`.
+  - dist gives custom jobs only `id-token`/`packages` write, so the upload would be refused. Fixed with `github-custom-job-permissions = { "linux-packages" = { contents = "write" } }`. `dist init --yes` was re-run, and `dist generate --check` and actionlint pass (actionlint only flags shellcheck style notes in dist's own generated code).
+  - Metadata is in `[package.metadata.deb]` / `[package.metadata.generate-rpm]`. The deb maintainer is `Adam Sawicki <frycz.dev@gmail.com>`.
+  - Verified locally: built in `rust:1-bullseye` containers with dist's profile, then installed in `debian:bookworm` and `fedora:latest`. Checked `keb --version`, `man keb` (all sections, C locale), bash completion loading, file layout, auto-detected glibc dependency (`libc6 (>= 2.30)` / `GLIBC_2.30`), and clean removal. **The CI job itself is only proven on the next tag.**
+- [x] **cargo-binstall.** Works with no metadata. `cargo binstall keb@0.3.0 --disable-strategies quick-install,compile` installs from dist's GitHub assets (tested in a container).
+- [x] **Social preview image.** `demo/preview.tape` → `demo/preview.png` (1280×640, one frame of `keb *`, before → after on every line). Re-record: `cargo build --release && vhs demo/preview.tape`.
+- [x] **Repo metadata command**, in "Owner, after batch 2" below.
+- [x] `CHANGELOG.md` `[Unreleased]` and `publish.md` (job order, verify step, recovery row, new "Linux packages" section with by-hand container checks) updated.
 
 ### Owner, after batch 2
 
 1. Run the full `cargo test`.
 2. Bump to **0.4.0** (license change + new shipped files) following `publish.md`: `Cargo.toml`, README installer URL, regenerate man page, CHANGELOG.
 3. Commit, `cargo publish`, tag, watch CI, `npm publish` by hand (the npm gap in `publish.md`).
-4. Check the Release has the .deb/.rpm assets; `cargo binstall keb` works.
-5. Upload the social preview image (GitHub → Settings → General → Social preview; no API). Run the `gh repo edit` command.
+4. Check the Release has the four .deb/.rpm assets (+ `.sha256`); `cargo binstall keb` works. If `custom-linux-packages` failed, the Release is still fine. Fix and re-run the job.
+5. Upload `demo/preview.png` as the social preview (GitHub → Settings → General → Social preview; no API). Then run this, which replaces the current description "Rename files to kebab case." (the repo has no homepage or topics yet):
+
+   ```sh
+   gh repo edit frycz/keb \
+     --description "Rename files to kebab case, safely and idempotently" \
+     --homepage "https://crates.io/crates/keb" \
+     --add-topic kebab-case,rename,cli,rust,filenames,slug,unicode,command-line-tool
+   ```
 
 ---
 
@@ -134,8 +137,7 @@ The agent-side work ends here. What remains is the owner's, and it's ongoing:
 | Step | Who | Depends on |
 |---|---|---|
 | Batch 1 — license, completions, man, GIF, README | agent | ✅ done |
-| Commit batch 1 | owner | full `cargo test` |
-| Batch 2 — man polish, .deb/.rpm, binstall, preview image, repo metadata | agent | — |
+| Batch 2 — man polish, .deb/.rpm, binstall, preview image, repo metadata | agent | ✅ done |
 | Release 0.4.0, upload preview, set topics | owner | batch 2 |
 | Batch 3 — AUR, nixpkgs, winget, Scoop, aqua manifests | agent | 0.4.0 checksums |
 | Submit packages, answer reviews | owner | batch 3 |
