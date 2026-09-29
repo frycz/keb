@@ -394,6 +394,48 @@ fn a_directory_alone_renames_only_itself() {
     assert_eq!(s.tree(), ["my-dir", "my-dir/My File.md"]);
 }
 
+/// `keb -r .` is the first thing anyone types in a project. The root has no name to
+/// rename, and saying so would make every such run exit 1.
+#[test]
+fn recursion_from_dot_is_a_clean_run() {
+    let s = Sandbox::new();
+    s.touch("Sub Dir/My File.md");
+
+    for flags in ["-r", "-dr"] {
+        let run = s.keb(["-n", flags, "."]);
+        assert_eq!((run.code, run.stderr.as_str()), (0, ""), "keb -n {flags} .");
+    }
+
+    let run = s.keb(["-r", "."]);
+    assert_eq!((run.code, run.stderr.as_str()), (0, ""));
+    assert_eq!(s.tree(), ["Sub Dir", "Sub Dir/my-file.md"]);
+}
+
+#[test]
+fn recursion_from_dot_dot_is_a_clean_run() {
+    let s = Sandbox::new();
+    s.touch("Sub Dir/My File.md");
+
+    let run = Command::new(env!("CARGO_BIN_EXE_keb"))
+        .current_dir(s.dir.join("Sub Dir"))
+        .args(["-n", "-r", ".."])
+        .output()
+        .map(Run::from)
+        .unwrap();
+    assert_eq!((run.code, run.stderr.as_str()), (0, ""));
+    assert_eq!(run.renames().len(), 1, "{}", run.stdout);
+}
+
+/// Without `-r`, `.` was not named to be swept, so it is still an error.
+#[test]
+fn a_bare_dot_without_recursion_is_refused() {
+    let s = Sandbox::new();
+
+    let run = s.keb(["-d", "."]);
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("no basename to rename"), "{}", run.stderr);
+}
+
 #[test]
 fn recursion_renames_deepest_first() {
     // cases.md §6 — otherwise the parent's rename invalidates every queued child path

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `keb -r .` and `keb -r ..` no longer print `no basename to rename` and exit 1 after a successful sweep. A `-r` root with no name of its own is swept and left alone, like any other root. Without `-r`, `keb -d .` is still refused.
 - Windows: the new path keeps the parent exactly as typed, including its separator. Before, `./A Dir/My File.md` was reported as `./A Dir\my-file.md`. A case-only rename under a parent typed with `/` was also taken for a collision and suffixed `-2`.
 
 ## [0.4.0] — 2026-09-29

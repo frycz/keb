@@ -212,6 +212,23 @@ fn step(
 ) -> io::Result<bool> {
     let path = &item.path;
 
+    // A `-r` root with no name of its own — `.`, `..`, `/` — was named only to be swept,
+    // and the sweep is done. Complaining that it cannot be renamed would turn the most
+    // natural `keb -r .` into a partial run over the one argument it needed.
+    if item.root
+        && matches!(
+            path.components().next_back(),
+            None | Some(
+                Component::CurDir
+                    | Component::ParentDir
+                    | Component::RootDir
+                    | Component::Prefix(_)
+            )
+        )
+    {
+        return Ok(true);
+    }
+
     let Some(raw) = path.file_name() else {
         eprintln!("keb: {}: no basename to rename", path.display());
         return Ok(false);

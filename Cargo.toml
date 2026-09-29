@@ -10,7 +10,7 @@ homepage    = "https://github.com/frycz/keb"
 readme      = "README.md"
 keywords    = ["kebab-case", "rename", "filename", "slug", "cli"]
 categories  = ["command-line-utilities", "filesystem", "text-processing"]
-exclude     = ["design/", "demo/", "publish.md", "next-steps.md", "atm.json", ".github/"]
+exclude     = ["design/", "demo/", "launch/", "publish.md", "next-steps.md", "atm.json", ".github/"]
 
 [lib]
 name = "keb"

@@ -4,7 +4,7 @@ The plan for taking keb from "published" to "available everywhere, and known". W
 
 **Where we are:** distribution plumbing works — crates.io, npm (`@frycz/keb`), Homebrew tap (`frycz/tap/keb`), shell/PowerShell installers, 5 build targets via cargo-dist. See `publish.md` for the release procedure. The bottleneck now is attention: the "official" channels (homebrew-core, Debian, Fedora) only accept tools people already use.
 
-**Strategy:** packaging readiness → demo → release → ungated package channels → launch → gated channels once there is traction.
+**Strategy:** packaging readiness → demo → release → feedback launch → ungated package channels, ordered by what people asked for → full launch → gated channels once there is traction. Batch 4 runs before batch 3; the reasoning and the posting order are in `launch/strategy.md`.
 
 ---
 
@@ -148,18 +148,22 @@ Put everything under `packaging/<channel>/` in this repo, and add `packaging/` t
 
 ---
 
-## Batch 4 — launch material (agent; can run in parallel, publish after 0.4.0)
+## Batch 4 — launch material (agent; before batch 3, see `launch/strategy.md`)
 
-- [ ] **Blog post draft:** "Renaming a file to kebab-case is harder than you think". Source: `design/cases.md` — NFKC vs NFD, case boundaries (`XMLHttpRequest`), digits not splitting words, compound extensions, grapheme-safe truncation and the 255-byte / UTF-16 limits, case-only renames on case-insensitive filesystems, protected names. keb is the punchline, not the subject. Every example verified in the playground.
+**Blocker found while drafting, fixed in the working tree:** `keb -r .` (and `keb -r ..`) printed `keb: .: no basename to rename` and exited 1, although the sweep itself worked. `step` in `src/main.rs` now returns early for a `-r` root whose last component is `.`, `..`, a root or a prefix; three new tests in `tests/cli.rs` cover it. Release 0.4.1 (with the Windows separator fix) before the first post.
+
+- [x] **Strategy:** `launch/strategy.md`, covering the order (r/commandline → adjust → r/rust → blog + Show HN → CotW and awesome lists → packaging), the objections to expect, and what to listen for.
+- [x] **r/commandline** draft: `launch/r-commandline.md` (usefulness angle, asks for feedback).
+- [x] **r/rust** draft: `launch/r-rust.md` (implementation angle). Update it with what came up on r/commandline before posting.
+- [ ] **Blog post draft** (after the Reddit rounds, leading with what people reacted to): "Renaming a file to kebab-case is harder than you think". Source: `design/cases.md` — NFKC vs NFD, case boundaries (`XMLHttpRequest`), digits not splitting words, compound extensions, grapheme-safe truncation and the 255-byte / UTF-16 limits, case-only renames on case-insensitive filesystems, protected names. keb is the punchline, not the subject. Every example verified in the playground.
 - [ ] **Show HN** title + first comment (the "why I built it / what was hard" text).
-- [ ] **r/rust** and **r/commandline** posts (different angles: implementation vs usefulness).
 - [ ] **Crate of the Week** nomination for the users.rust-lang.org thread.
 - [ ] **awesome-rust** and **awesome-cli-apps** entries, matching each list's format and contribution rules.
-- [ ] Put all drafts in `launch/` (exclude it from the crate).
+- [x] Put all drafts in `launch/` (excluded from the crate).
 
 ### Owner, after batch 4
 
-- Publish the blog post, then post Show HN (weekday morning US time is typical), then Reddit a day or two apart — not all at once.
+- Follow `launch/strategy.md`: r/commandline first, then r/rust a few days later, then the blog post and Show HN.
 - Be around to answer comments for the first day. Collect feedback into issues.
 - Open the awesome-list PRs.
 - Lobsters needs an invite from an existing member.
@@ -200,9 +204,11 @@ The agent-side work ends here. What remains is the owner's, and it's ongoing:
 | Batch 1 — license, completions, man, GIF, README | agent | ✅ done |
 | Batch 2 — man polish, .deb/.rpm, binstall, preview image, repo metadata | agent | ✅ done |
 | Release 0.4.0, upload preview, set topics | owner | ✅ done |
-| Batch 3 — AUR, nixpkgs, winget, Scoop, aqua manifests | agent | 0.4.0 checksums |
+| Batch 4 — Reddit drafts + strategy | agent | ✅ drafted; blog post, Show HN, CotW, awesome lists left |
+| Fix `keb -r .` | agent | ✅ done, owner to run full `cargo test` |
+| Release 0.4.1, post r/commandline, then r/rust | owner | the fix, batch 4 drafts |
+| Batch 3 — AUR, nixpkgs, winget, Scoop, aqua manifests | agent | feedback from the Reddit rounds |
 | Submit packages, answer reviews | owner | batch 3 |
-| Batch 4 — blog post + launch posts | agent | anytime |
-| Launch | owner | 0.4.0 live, batch 4 |
+| Full launch (blog post, Show HN) | owner | Reddit feedback, batch 4 |
 | Batch 5 — release automation | agent | batch 3 accepted |
 | Gated channels | owner | traction |
