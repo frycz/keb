@@ -11,7 +11,6 @@
 //!   just a name (§14).
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -270,7 +269,7 @@ fn run_raw(cmd: &mut Command) -> Option<Vec<u8>> {
 }
 
 #[cfg(unix)]
-fn os_str(bytes: &[u8]) -> &OsStr {
+fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
     std::os::unix::ffi::OsStrExt::from_bytes(bytes)
 }
 
